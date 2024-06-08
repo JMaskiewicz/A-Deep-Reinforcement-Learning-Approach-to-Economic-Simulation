@@ -178,7 +178,10 @@ class PPO:
 
         # Ensure batch_advantages has the correct shape
         batch_advantages = batch_advantages.unsqueeze(1) if batch_advantages.ndim == 1 else batch_advantages
-        batch_advantages = batch_advantages.expand_as(ratio)
+
+        # The advantage tensor should have the same shape as new_probs for the ratio operation
+        if batch_advantages.size() != ratio.size():
+            batch_advantages = batch_advantages[:, :ratio.size(1)]
 
         surr1 = ratio * batch_advantages
         surr2 = torch.clamp(ratio, 1 - self.policy_clip, 1 + self.policy_clip) * batch_advantages
