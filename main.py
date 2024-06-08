@@ -237,12 +237,11 @@ class EconomicEnv(gym.Env):
         reward = profit
 
         state = np.array([self.production, self.price, self.demand])
-        terminated = self.current_step >= 500
-        truncated = False
+        terminated = self.current_step >= 50
 
         self.current_step += 1
 
-        return state, reward, terminated, truncated, {'profit': profit, 'revenue': revenue, 'cost': cost}
+        return state, reward, terminated, {'profit': profit, 'revenue': revenue, 'cost': cost}
 
     def reset(self, **kwargs):
         self.production = np.random.randint(0, 101)
@@ -275,12 +274,12 @@ if __name__ == '__main__':
 
         while not done:
             action, log_prob, value = agent.choose_action(observation)
-            next_observation, reward, terminated, truncated, info = env.step(action)
+            next_observation, reward, terminated, info = env.step(action)
 
             agent.store_transition(observation, action, log_prob, value, reward, done)
 
             observation = next_observation
-            done = terminated or truncated
+            done = terminated
             print('Action:', action, 'Reward:', reward)
 
             if len(agent.memory.states) >= agent.memory.batch_size:
