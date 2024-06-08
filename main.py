@@ -53,28 +53,34 @@ class PPOMemory:
         self.dones = torch.cat(self.dones, dim=0).to(self.device)
 
 class BaseNetwork(nn.Module):
-    def __init__(self, input_dims, output_dims, dropout_rate=0.2):
+    def __init__(self, input_dims, output_dims, dropout_rate=0.1):
         super(BaseNetwork, self).__init__()
         self.layers = nn.ModuleList()
         self.batch_norms = nn.ModuleList()
 
         layer_dims = [64, 64]
         for i in range(len(layer_dims)):
-            self.layers.append(nn.Linear(input_dims if i == 0 else layer_dims[i-1], layer_dims[i]))
+            layer = nn.Linear(input_dims if i == 0 else layer_dims[i-1], layer_dims[i])
+            nn.init.kaiming_normal_(layer.weight)  # He initialization
+            self.layers.append(layer)
             self.batch_norms.append(nn.BatchNorm1d(layer_dims[i]))
 
         self.final_layer = nn.Linear(layer_dims[-1], output_dims)
+        nn.init.kaiming_normal_(self.final_layer.weight)  # He initialization
         self.relu = nn.LeakyReLU()
         self.dropout = nn.Dropout(dropout_rate)
 
     def forward(self, state):
         x = state
-        for layer, bn in zip(self.layers, self.batch_norms):
+        for i, (layer, bn) in enumerate(zip(self.layers, self.batch_norms)):
             x = layer(x)
             if x.size(0) > 1:  # Apply batch normalization only if batch size > 1
                 x = bn(x)
             x = self.relu(x)
             x = self.dropout(x)
+            # Debugging print to check for NaNs
+            if torch.isnan(x).any():
+                print(f"NaN detected in layer {i}: {x}")
         return x
 
 class ActorNetwork(BaseNetwork):
@@ -84,11 +90,17 @@ class ActorNetwork(BaseNetwork):
     def forward(self, state):
         x = super(ActorNetwork, self).forward(state)
         x = self.final_layer(x)
+        # Debugging print to check for NaNs before applying sigmoid
+        if torch.isnan(x).any():
+            print("NaN detected in final layer output before sigmoid: ", x)
         x = torch.sigmoid(x)
+        # Debugging print to check for NaNs after applying sigmoid
+        if torch.isnan(x).any():
+            print("NaN detected in final layer output after sigmoid: ", x)
         return x
 
 class CriticNetwork(BaseNetwork):
-    def __init__(self, input_dims, dropout_rate=0.2):
+    def __init__(self, input_dims, dropout_rate=0.1):
         super(CriticNetwork, self).__init__(input_dims, 1, dropout_rate)
 
     def forward(self, state):
@@ -174,7 +186,7 @@ class PPO:
         batch_old_probs = batch_old_probs.squeeze()
 
         # Calculate ratio for clipped surrogate objective
-        ratio = (new_probs / batch_old_probs)
+        ratio = (new_probs / (batch_old_probs + 1e-10))
 
         # Ensure batch_advantages has the correct shape
         batch_advantages = batch_advantages.unsqueeze(1) if batch_advantages.ndim == 1 else batch_advantages
@@ -200,7 +212,24 @@ class PPO:
         observation = np.array(observation).reshape(1, -1)
         state = torch.tensor(observation, dtype=torch.float).to(self.device)
         actions = self.actor(state).cpu().numpy().flatten()
+
+        # Debugging print to trace NaN values
+        if np.isnan(actions).any():
+            print("NaN detected in actions before scaling: ", actions)
+
         actions = actions * 100  # Scale actions to the range [0, 100]
+
+        # Debugging print to trace NaN values
+        if np.isnan(actions).any():
+            print("NaN detected in actions after scaling: ", actions)
+
+        # Clamp the actions to ensure they are within valid bounds
+        actions = np.clip(actions, 0, 100)
+
+        # Debugging print to ensure no NaNs
+        if np.isnan(actions).any():
+            print("NaN detected in actions after clamping: ", actions)
+
         log_prob = None  # Not applicable for continuous actions
         value = self.critic(state).cpu().numpy().flatten()
 
@@ -255,12 +284,12 @@ class EconomicEnv(gym.Env):
 if __name__ == '__main__':
     input_dims = 3
     n_actions = 2
-    alpha = 0.0003
+    alpha = 0.0005
     policy_clip = 0.2
-    batch_size = 10
-    n_epochs = 10
-    entropy_coefficient = 0.01
-    weight_decay = 0.01
+    batch_size = 128
+    n_epochs = 5
+    entropy_coefficient = 0.2
+    weight_decay = 0.0000001
     mini_batch_size = 64
 
     agent = PPO(input_dims, n_actions, alpha, policy_clip=policy_clip, batch_size=batch_size, n_epochs=n_epochs, entropy_coefficient=entropy_coefficient, weight_decay=weight_decay, mini_batch_size=mini_batch_size)
@@ -280,6 +309,7 @@ if __name__ == '__main__':
 
             observation = next_observation
             done = terminated
+
             print('Action:', action, 'Reward:', reward)
 
             if len(agent.memory.states) >= agent.memory.batch_size:
