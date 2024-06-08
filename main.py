@@ -5,6 +5,7 @@ import torch.optim as optim
 from tqdm import tqdm
 import gym
 from gym import spaces
+import time
 
 class PPOMemory:
     def __init__(self, batch_size, device):
@@ -79,12 +80,11 @@ class BaseNetwork(nn.Module):
 class ActorNetwork(BaseNetwork):
     def __init__(self, n_actions, input_dims, dropout_rate=0.2):
         super(ActorNetwork, self).__init__(input_dims, n_actions, dropout_rate)
-        self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, state):
         x = super(ActorNetwork, self).forward(state)
         x = self.final_layer(x)
-        x = self.softmax(x)
+        x = torch.sigmoid(x)
         return x
 
 class CriticNetwork(BaseNetwork):
@@ -188,14 +188,12 @@ class PPO:
 
         observation = np.array(observation).reshape(1, -1)
         state = torch.tensor(observation, dtype=torch.float).to(self.device)
-        probs = self.actor(state)
-
-        dist = torch.distributions.Categorical(probs)
-        action = dist.sample().cpu().numpy()
-        log_prob = dist.log_prob(dist.sample()).cpu().numpy()
+        actions = self.actor(state).cpu().numpy().flatten()
+        actions = actions * 100  # Scale actions to the range [0, 100]
+        log_prob = None  # Not applicable for continuous actions
         value = self.critic(state).cpu().numpy().flatten()
 
-        return action, log_prob, value
+        return actions, log_prob, value
 
 class EconomicEnv(gym.Env):
     def __init__(self):
@@ -215,7 +213,9 @@ class EconomicEnv(gym.Env):
         return 20 + 1.5 * production if production > 0 else 0
 
     def step(self, action):
-        production, price = map(int, np.round(action * 100))
+        if len(action) != 2:
+            raise ValueError("Action must contain exactly two elements.")
+        production, price = map(int, np.round(action))
         self.production, self.price = production, price
         self.demand = self.calculate_demand(price)
 
