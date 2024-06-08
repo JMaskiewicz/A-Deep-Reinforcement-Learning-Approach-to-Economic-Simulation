@@ -58,7 +58,7 @@ class BaseNetwork(nn.Module):
         self.layers = nn.ModuleList()
         self.batch_norms = nn.ModuleList()
 
-        layer_dims = [64, 64]
+        layer_dims = [4, 4]
         for i in range(len(layer_dims)):
             layer = nn.Linear(input_dims if i == 0 else layer_dims[i-1], layer_dims[i])
             nn.init.kaiming_normal_(layer.weight)  # He initialization
@@ -284,18 +284,18 @@ class EconomicEnv(gym.Env):
 if __name__ == '__main__':
     input_dims = 3
     n_actions = 2
-    alpha = 0.0005
-    policy_clip = 0.2
-    batch_size = 128
-    n_epochs = 5
-    entropy_coefficient = 0.2
+    alpha = 0.00005
+    policy_clip = 0.25
+    batch_size = 64
+    n_epochs = 10
+    entropy_coefficient = 0.1
     weight_decay = 0.0000001
     mini_batch_size = 64
 
     agent = PPO(input_dims, n_actions, alpha, policy_clip=policy_clip, batch_size=batch_size, n_epochs=n_epochs, entropy_coefficient=entropy_coefficient, weight_decay=weight_decay, mini_batch_size=mini_batch_size)
     env = EconomicEnv()
 
-    num_episodes = 500
+    num_episodes = 20
 
     for episode in tqdm(range(num_episodes)):
         observation, _ = env.reset()
@@ -309,7 +309,6 @@ if __name__ == '__main__':
 
             observation = next_observation
             done = terminated
-
             print('Action:', action, 'Reward:', reward)
 
             if len(agent.memory.states) >= agent.memory.batch_size:
