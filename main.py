@@ -24,6 +24,7 @@ class PPOMemory:
         n_states = len(self.states)
         batch_start = torch.arange(0, n_states, self.batch_size)
         indices = torch.arange(n_states, dtype=torch.int64)
+        np.random.shuffle(indices)
         batches = [indices[i:i + self.batch_size] for i in batch_start]
 
         return self.states, self.actions, self.probs, self.vals, self.rewards, self.dones, batches
@@ -55,8 +56,8 @@ class PPOMemory:
 class EconomicEnv(gym.Env):
     def __init__(self):
         super(EconomicEnv, self).__init__()
-        self.action_space = spaces.MultiDiscrete([101, 101])  # Discrete actions for production and price
-        self.observation_space = spaces.Box(low=np.array([0, 0, 0]), high=np.array([100, 100, 200]), dtype=np.float32)
+        self.action_space = spaces.Box(low=np.array([0.0, 0.0, 0.0]), high=np.array([1.0, 1.0, 1.0]), dtype=np.float32)
+        self.observation_space = spaces.Box(low=np.array([0, 0, 0]), high=np.array([1, 1, 1]), dtype=np.float32)
         self.current_step = 0
 
         self.production = 0
@@ -64,81 +65,40 @@ class EconomicEnv(gym.Env):
         self.demand = 0
 
     def calculate_demand(self, price):
-        return max(200 - 2 * price, 0)
+        return max(2 - 1.5 * price, 0)
 
     def calculate_cost(self, production):
-        return 20 + 1.5 * production if production > 0 else 0
+        return 0.2 + 0.01 * production if production > 0 else 0
 
     def step(self, action):
-        if len(action) != 2:
-            raise ValueError("Action must contain exactly two elements.")
+        if len(action) != 3:
+            raise ValueError("Action must contain exactly three elements.")
 
-        production, price = action
-        self.production, self.price = production, price
-        self.demand = self.calculate_demand(price)
+        production_ratio, price_ratio, start_production = action
+        self.production = production_ratio if start_production > 0.5 else 0
+        self.price = price_ratio
+        self.demand = self.calculate_demand(self.price)
 
-        cost = self.calculate_cost(production)
-        revenue = min(production, self.demand) * price
+        cost = self.calculate_cost(self.production)
+        revenue = min(self.production, self.demand) * self.price
 
         profit = revenue - cost
-        reward = profit
+        reward = profit*1000
 
         state = np.array([self.production, self.price, self.demand])
-        terminated = self.current_step >= 50
+        terminated = self.current_step >= 63
 
         self.current_step += 1
 
         return state, reward, terminated, {'profit': profit, 'revenue': revenue, 'cost': cost}
 
     def reset(self, **kwargs):
-        self.production = np.random.randint(0, 101)
-        self.price = np.random.randint(0, 101)
+        self.production = np.random.uniform(0, 1)
+        self.price = np.random.uniform(0, 1)
         self.demand = self.calculate_demand(self.price)
         self.current_step = 0
         state = np.array([self.production, self.price, self.demand])
         return state, {}
-
-class ActorNetwork(nn.Module):
-    def __init__(self, input_dims, n_actions, n_discrete, dropout_rate=0.2):
-        super(ActorNetwork, self).__init__()
-        self.layers = nn.ModuleList()
-        self.batch_norms = nn.ModuleList()
-
-        layer_dims = [16, 16]
-        for i in range(len(layer_dims)):
-            layer = nn.Linear(input_dims if i == 0 else layer_dims[i-1], layer_dims[i])
-            nn.init.kaiming_normal_(layer.weight)  # He initialization
-            self.layers.append(layer)
-            self.batch_norms.append(nn.BatchNorm1d(layer_dims[i]))
-
-        self.final_layer = nn.Linear(layer_dims[-1], n_actions * n_discrete)
-        nn.init.kaiming_normal_(self.final_layer.weight)  # He initialization
-        self.relu = nn.LeakyReLU()
-        self.dropout = nn.Dropout(dropout_rate)
-        self.n_actions = n_actions
-        self.n_discrete = n_discrete
-
-    def forward(self, state):
-        x = state
-        for i, (layer, bn) in enumerate(zip(self.layers, self.batch_norms)):
-            x = layer(x)
-            if x.size(0) > 1:  # Apply batch normalization only if batch size > 1
-                x = bn(x)
-            x = self.relu(x)
-            x = self.dropout(x)
-            # Debugging print to check for NaNs
-            if torch.isnan(x).any():
-                print(f"NaN detected in layer {i}: {x}")
-        x = self.final_layer(x)
-        return x
-
-    def act(self, state):
-        x = self.forward(state)
-        logits = x.view(-1, self.n_actions, self.n_discrete)
-        probs = torch.softmax(logits, dim=-1)
-        dist = torch.distributions.Categorical(probs)
-        actions = dist.sample()
-        return actions, dist.log_prob(actions)
 
 class BaseNetwork(nn.Module):
     def __init__(self, input_dims, output_dims, dropout_rate=0.1):
@@ -146,7 +106,7 @@ class BaseNetwork(nn.Module):
         self.layers = nn.ModuleList()
         self.batch_norms = nn.ModuleList()
 
-        layer_dims = [16, 16]
+        layer_dims = [32, 32]
         for i in range(len(layer_dims)):
             layer = nn.Linear(input_dims if i == 0 else layer_dims[i-1], layer_dims[i])
             nn.init.kaiming_normal_(layer.weight)  # He initialization
@@ -180,12 +140,53 @@ class CriticNetwork(BaseNetwork):
         q = self.final_layer(x)
         return q
 
+class ActorNetwork(nn.Module):
+    def __init__(self, input_dims, dropout_rate=0.2):
+        super(ActorNetwork, self).__init__()
+        self.layers = nn.ModuleList()
+        self.batch_norms = nn.ModuleList()
+
+        layer_dims = [32, 32]
+        for i in range(len(layer_dims)):
+            layer = nn.Linear(input_dims if i == 0 else layer_dims[i-1], layer_dims[i])
+            nn.init.kaiming_normal_(layer.weight)  # He initialization
+            self.layers.append(layer)
+            self.batch_norms.append(nn.BatchNorm1d(layer_dims[i]))
+
+        self.final_layer_continuous = nn.Linear(layer_dims[-1], 2)
+        self.final_layer_binary = nn.Linear(layer_dims[-1], 1)
+        nn.init.kaiming_normal_(self.final_layer_continuous.weight)  # He initialization
+        nn.init.kaiming_normal_(self.final_layer_binary.weight)  # He initialization
+        self.relu = nn.LeakyReLU()
+        self.dropout = nn.Dropout(dropout_rate)
+
+    def forward(self, state):
+        x = state
+        for i, (layer, bn) in enumerate(zip(self.layers, self.batch_norms)):
+            x = layer(x)
+            if x.size(0) > 1:  # Apply batch normalization only if batch size > 1
+                x = bn(x)
+            x = self.relu(x)
+            x = self.dropout(x)
+        continuous_actions = torch.sigmoid(self.final_layer_continuous(x))
+        binary_action = torch.sigmoid(self.final_layer_binary(x))
+        return continuous_actions, binary_action
+
+    def act(self, state):
+        continuous_actions, binary_action = self.forward(state)
+        dist_continuous = torch.distributions.Beta(continuous_actions, 1 - continuous_actions)
+        dist_binary = torch.distributions.Bernoulli(probs=binary_action)
+        actions_continuous = dist_continuous.sample()
+        actions_binary = dist_binary.sample()
+        actions = torch.cat((actions_continuous, actions_binary), dim=-1)
+        return actions, dist_continuous.log_prob(actions_continuous).sum(dim=-1) + dist_binary.log_prob(actions_binary).sum(dim=-1)
+
 class PPO:
-    def __init__(self, input_dims, n_actions, n_discrete, alpha=0.0003, policy_clip=0.2, batch_size=64, n_epochs=10, entropy_coefficient=0.01, weight_decay=0.01, mini_batch_size=64):
-        self.device = torch.device("cpu")
+    def __init__(self, input_dims, n_actions, alpha=0.0003, policy_clip=0.2, batch_size=64, n_epochs=10, entropy_coefficient=0.01, weight_decay=0.01, mini_batch_size=64):
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Using device: {self.device}")
 
-        self.actor = ActorNetwork(input_dims, n_actions, n_discrete).to(self.device)
+        self.actor = ActorNetwork(input_dims).to(self.device)
         self.critic = CriticNetwork(input_dims).to(self.device)
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=alpha, weight_decay=weight_decay)
         self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=alpha, weight_decay=weight_decay)
@@ -249,10 +250,14 @@ class PPO:
         print("-" * 100)
 
     def calculate_loss(self, batch_states, batch_actions, batch_advantages, batch_returns, batch_old_probs):
-        logits = self.actor(batch_states).view(-1, 2, 101)
-        dist = torch.distributions.Categorical(logits=logits)
-        new_probs = dist.log_prob(batch_actions).sum(dim=-1)
-        dist_entropy = dist.entropy().mean()
+        continuous_actions, binary_action = self.actor(batch_states)
+        dist_continuous = torch.distributions.Beta(continuous_actions, 1 - continuous_actions)
+        dist_binary = torch.distributions.Bernoulli(probs=binary_action)
+
+        new_probs_continuous = dist_continuous.log_prob(batch_actions[:, :2]).sum(dim=-1)
+        new_probs_binary = dist_binary.log_prob(batch_actions[:, 2]).sum(dim=-1)
+        new_probs = new_probs_continuous + new_probs_binary
+        dist_entropy = dist_continuous.entropy().sum(dim=-1).mean() + dist_binary.entropy().mean()
 
         new_vals = self.critic(batch_states).squeeze()
 
@@ -287,23 +292,21 @@ class PPO:
 
         return actions.cpu().numpy().flatten(), log_prob, value
 
-
 if __name__ == '__main__':
     input_dims = 3
-    n_actions = 2
-    n_discrete = 101  # Number of discrete action values
-    alpha = 0.00025
-    policy_clip = 0.25
+    n_actions = 3
+    alpha = 0.0005
+    policy_clip = 0.5
     batch_size = 64
-    n_epochs = 5
-    entropy_coefficient = 0.5
+    n_epochs = 2000
+    entropy_coefficient = 0.25
     weight_decay = 0.0000001
     mini_batch_size = 64
 
-    agent = PPO(input_dims, n_actions, n_discrete, alpha, policy_clip=policy_clip, batch_size=batch_size, n_epochs=n_epochs, entropy_coefficient=entropy_coefficient, weight_decay=weight_decay, mini_batch_size=mini_batch_size)
+    agent = PPO(input_dims, n_actions, alpha, policy_clip=policy_clip, batch_size=batch_size, n_epochs=n_epochs, entropy_coefficient=entropy_coefficient, weight_decay=weight_decay, mini_batch_size=mini_batch_size)
     env = EconomicEnv()
 
-    num_episodes = 1000
+    num_episodes = 11
 
     for episode in tqdm(range(num_episodes)):
         observation, _ = env.reset()
@@ -323,5 +326,5 @@ if __name__ == '__main__':
                 agent.learn()
                 agent.memory.clear_memory()
 
-            if episode % 10 == 0:
-                print(f'Episode {episode}, Actions: {action}, Reward: {reward}')
+
+            print(f'Episode {episode}, Actions: {action}, Reward: {reward}')

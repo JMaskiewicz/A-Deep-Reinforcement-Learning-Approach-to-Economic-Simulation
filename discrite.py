@@ -82,7 +82,7 @@ class EconomicEnv(gym.Env):
         revenue = min(production, self.demand) * price
 
         profit = revenue - cost
-        reward = profit
+        reward = profit * 1000
 
         state = np.array([self.production, self.price, self.demand])
         terminated = self.current_step >= 50
