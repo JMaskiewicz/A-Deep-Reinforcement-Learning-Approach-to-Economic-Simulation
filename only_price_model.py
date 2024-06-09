@@ -5,7 +5,6 @@ import torch.optim as optim
 from tqdm import tqdm
 import gym
 from gym import spaces
-import torch.nn.functional as F
 
 class PPOMemory:
     def __init__(self, batch_size, device):
@@ -68,7 +67,7 @@ class EconomicEnv(gym.Env):
         return max(2 - 1.5 * price, 0)
 
     def calculate_cost(self, production):
-        return 0.2 + 0.01 * production if production > 0 else 0
+        return 0.2 + 0.025 * production if production > 0 else 0
 
     def step(self, action):
         if len(action) != 1:
@@ -82,10 +81,10 @@ class EconomicEnv(gym.Env):
         revenue = min(self.production, self.demand) * self.price
 
         profit = revenue - cost
-        reward = profit * 1000
+        reward = profit
 
         state = np.array([self.price, self.demand])
-        terminated = self.current_step >= 63
+        terminated = self.current_step > 64
 
         self.current_step += 1
 
@@ -101,43 +100,46 @@ class EconomicEnv(gym.Env):
 class ActorNetwork(nn.Module):
     def __init__(self, input_dims):
         super(ActorNetwork, self).__init__()
-        self.fc1 = nn.Linear(input_dims, 4)
-        self.mean = nn.Linear(4, 1)
-        self.log_std = nn.Parameter(torch.zeros(1))  # Log standard deviation as a learnable parameter
+        self.fc1 = nn.Linear(input_dims, 8)
+        self.fc2 = nn.Linear(8, 8)
+        self.mean = nn.Linear(8, 1)
+        self.log_std = nn.Parameter(torch.log(torch.tensor(0.25)))  # Initialize std
         self.relu = nn.ReLU()
+
+        # Initialize the mean layer to output values close to 0.5
+        nn.init.constant_(self.mean.weight, 0.0)
+        nn.init.constant_(self.mean.bias, -torch.log(torch.tensor(1/0.5 - 1)).item())
 
     def forward(self, state):
         x = self.relu(self.fc1(state))
+        x = self.relu(self.fc2(x))
         mean = torch.sigmoid(self.mean(x))
-        log_std = self.log_std.expand_as(mean)  # Ensure log_std has the same shape as mean
-        std = torch.exp(log_std)
+        std = torch.exp(self.log_std)
         return mean, std
 
-    def act(self, state, uniform_sampling=False):
-        if uniform_sampling:
-            action = torch.rand(state.shape[0], 1).to(state.device)
-            log_prob = torch.zeros(state.shape[0], 1).to(state.device)  # Uniform distribution log-prob is zero
-        else:
-            mean, std = self.forward(state)
-            dist = torch.distributions.Normal(mean, std)
-            action = dist.sample().clamp(0, 1)
-            log_prob = dist.log_prob(action).sum(dim=-1)
+    def act(self, state):
+        mean, std = self.forward(state)
+        dist = torch.distributions.Normal(mean, std)
+        action = dist.sample().clamp(0, 1)
+        log_prob = dist.log_prob(action).sum(dim=-1)
         return action, log_prob
 
 class CriticNetwork(nn.Module):
     def __init__(self, input_dims):
         super(CriticNetwork, self).__init__()
-        self.fc1 = nn.Linear(input_dims, 4)
-        self.value = nn.Linear(4, 1)
+        self.fc1 = nn.Linear(input_dims, 8)
+        self.fc2 = nn.Linear(8, 8)
+        self.value = nn.Linear(8, 1)
         self.relu = nn.ReLU()
 
     def forward(self, state):
         x = self.relu(self.fc1(state))
+        x = self.relu(self.fc2(x))
         value = self.value(x)
         return value
 
 class PPO:
-    def __init__(self, input_dims, alpha=0.0003, policy_clip=0.2, batch_size=64, n_epochs=10, entropy_coefficient=0.01):
+    def __init__(self, input_dims, alpha=0.0003, policy_clip=0.2, batch_size=64, n_epochs=1000, entropy_coefficient=0.01):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Using device: {self.device}")
 
@@ -151,7 +153,6 @@ class PPO:
         self.policy_clip = policy_clip
         self.n_epochs = n_epochs
         self.entropy_coefficient = entropy_coefficient
-        self.uniform_sampling = True  # Start with uniform sampling
 
     def store_transition(self, state, action, probs, vals, reward, done):
         self.memory.store_memory(state, action, probs, vals, reward, done)
@@ -166,9 +167,6 @@ class PPO:
         state_arr, action_arr, old_prob_arr, vals_arr, reward_arr, dones_arr, batches = self.memory.generate_batches()
 
         advantages = reward_arr - vals_arr
-
-        # Normalize advantages
-        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-10)
 
         for _ in range(self.n_epochs):
             for batch in batches:
@@ -206,17 +204,13 @@ class PPO:
     @torch.no_grad()
     def choose_action(self, observation):
         state = torch.tensor(observation, dtype=torch.float).to(self.device)
-        action, log_prob = self.actor.act(state, self.uniform_sampling)
+        action, log_prob = self.actor.act(state)
         value = self.critic(state).cpu().numpy().flatten()
         return action.cpu().numpy().flatten(), log_prob.cpu().numpy().flatten(), value
 
-    def update_uniform_sampling(self, episode, switch_episode=2):
-        if episode > switch_episode:
-            self.uniform_sampling = False
-
 if __name__ == '__main__':
     input_dims = 2
-    alpha = 0.00005
+    alpha = 0.0003
     policy_clip = 0.2
     batch_size = 64
     n_epochs = 1000
@@ -225,24 +219,35 @@ if __name__ == '__main__':
     agent = PPO(input_dims, alpha, policy_clip=policy_clip, batch_size=batch_size, n_epochs=n_epochs, entropy_coefficient=entropy_coefficient)
     env = EconomicEnv()
 
-    num_episodes = 11
+    num_episodes = 25
 
     for episode in tqdm(range(num_episodes)):
-        agent.update_uniform_sampling(episode, switch_episode=2)
         observation, _ = env.reset()
         done = False
         total_reward = 0
+        actions = []
+        rewards = []
 
         while not done:
             action, log_prob, value = agent.choose_action(observation)
-            next_observation, reward, terminated, info = env.step([action])
+            next_observation, reward, terminated, info = env.step(action)
 
             agent.store_transition(observation, action, log_prob, value, reward, done)
 
             observation = next_observation
             done = terminated
 
+            actions.append(action)
+            rewards.append(reward)
+
             if len(agent.memory.states) >= agent.memory.batch_size:
                 agent.learn()
 
-            print(f'Episode {episode}, Actions: {action}, Reward: {reward}')
+            #print('Action:', action, 'Reward:', reward)
+
+        # Calculate and print the mean of the actions for the episode
+        mean_action = np.mean(actions)
+        mean_reward = np.mean(rewards)
+        print(f'Episode {episode + 1}:', f'Mean Action: {mean_action}', f'Mean Reward: {mean_reward}', f'std: {np.std(actions)}')
+
+
