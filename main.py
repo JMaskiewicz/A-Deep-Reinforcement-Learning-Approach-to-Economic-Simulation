@@ -288,7 +288,7 @@ class PPO:
         return actions.cpu().numpy().flatten(), log_prob, value
 
 
-if __name__ == '__script__':
+if __name__ == '__main__':
     input_dims = 3
     n_actions = 2
     n_discrete = 101  # Number of discrete action values
@@ -303,7 +303,7 @@ if __name__ == '__script__':
     agent = PPO(input_dims, n_actions, n_discrete, alpha, policy_clip=policy_clip, batch_size=batch_size, n_epochs=n_epochs, entropy_coefficient=entropy_coefficient, weight_decay=weight_decay, mini_batch_size=mini_batch_size)
     env = EconomicEnv()
 
-    num_episodes = 100
+    num_episodes = 1000
 
     for episode in tqdm(range(num_episodes)):
         observation, _ = env.reset()
