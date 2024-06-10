@@ -57,7 +57,7 @@ for episode in range(num_episodes):
 
     sigma *= 0.99  # Decrease sigma over time to reduce exploration as learning progresses
 
-    if episode % 10 == 0:
+    if episode % 1 == 0:
         print(f"Episode {episode}: Actions {noisy_actions.detach().numpy()}, Profit {profit.item():.2f}")
 
 # Testing the trained actor
