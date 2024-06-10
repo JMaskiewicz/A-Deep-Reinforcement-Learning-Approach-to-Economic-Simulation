@@ -64,10 +64,10 @@ class EconomicEnv(gym.Env):
         self.demand = 0
 
     def calculate_demand(self, price):
-        return max(2 - 1.5 * price, 0)
+        return max(2000 - 100 * price, 0)
 
-    def calculate_cost(self, production):
-        return 0.2 + 0.01 * production if production > 0 else 0
+    def calculate_cost(self, price):
+        return 1000 + 4 * self.calculate_demand(self.price) if price > 0 else 0
 
     def step(self, action):
         if len(action) != 1:
@@ -77,11 +77,11 @@ class EconomicEnv(gym.Env):
         self.price = price_ratio
         self.demand = self.calculate_demand(self.price)
 
-        cost = self.calculate_cost(self.production)
-        revenue = min(self.production, self.demand) * self.price
+        cost = self.calculate_cost(self.price)
+        revenue = self.demand * self.price
 
         profit = revenue - cost
-        reward = profit * 100
+        reward = profit
 
         state = np.array([self.price, self.demand])
         terminated = self.current_step > 64
@@ -100,10 +100,10 @@ class EconomicEnv(gym.Env):
 class ActorNetwork(nn.Module):
     def __init__(self, input_dims):
         super(ActorNetwork, self).__init__()
-        self.fc1 = nn.Linear(input_dims, 32)
-        self.fc2 = nn.Linear(32, 32)
-        self.mean = nn.Linear(32, 1)
-        self.log_std = nn.Parameter(torch.log(torch.tensor(0.1)))  # Initialize std
+        self.fc1 = nn.Linear(input_dims, 16)
+        self.fc2 = nn.Linear(16, 16)
+        self.mean = nn.Linear(16, 1)
+        self.log_std = nn.Parameter(torch.log(torch.tensor(0.5)))  # Initialize std
         self.relu = nn.ReLU()
 
         # Initialize the mean layer to output values close to 0.5
@@ -120,16 +120,16 @@ class ActorNetwork(nn.Module):
     def act(self, state):
         mean, std = self.forward(state)
         dist = torch.distributions.Normal(mean, std)
-        action = dist.sample().clamp(0, 1)
+        action = dist.sample().clamp(0, 1) * 100
         log_prob = dist.log_prob(action).sum(dim=-1)
         return action, log_prob
 
 class CriticNetwork(nn.Module):
     def __init__(self, input_dims):
         super(CriticNetwork, self).__init__()
-        self.fc1 = nn.Linear(input_dims, 32)
-        self.fc2 = nn.Linear(32, 32)
-        self.value = nn.Linear(32, 1)
+        self.fc1 = nn.Linear(input_dims, 16)
+        self.fc2 = nn.Linear(16, 16)
+        self.value = nn.Linear(16, 1)
         self.relu = nn.ReLU()
 
     def forward(self, state):
@@ -165,6 +165,8 @@ class PPO:
         self.memory.stack_tensors()
 
         state_arr, action_arr, old_prob_arr, vals_arr, reward_arr, dones_arr, batches = self.memory.generate_batches()
+
+        reward_arr = (reward_arr - reward_arr.mean()) / (reward_arr.std() + 1e-10)
 
         advantages = reward_arr - vals_arr
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-10)
@@ -211,10 +213,10 @@ class PPO:
 
 if __name__ == '__main__':
     input_dims = 2
-    alpha = 0.00025
-    policy_clip = 0.25
+    alpha = 0.005
+    policy_clip = 1
     batch_size = 64
-    n_epochs = 100
+    n_epochs = 1000
     entropy_coefficient = 0.05
 
     agent = PPO(input_dims, alpha, policy_clip=policy_clip, batch_size=batch_size, n_epochs=n_epochs, entropy_coefficient=entropy_coefficient)
@@ -241,14 +243,11 @@ if __name__ == '__main__':
             actions.append(action)
             rewards.append(reward)
 
+            #print(f'Episode {episode + 1}:', f'Action: {action}', f'Reward: {reward}', f'Value: {value}')
             if len(agent.memory.states) >= agent.memory.batch_size:
                 agent.learn()
-
-            #print('Action:', action, 'Reward:', reward)
 
         # Calculate and print the mean of the actions for the episode
         mean_action = np.mean(actions)
         mean_reward = np.mean(rewards)
         print(f'Episode {episode + 1}:', f'Mean Action: {mean_action}', f'Mean Reward: {mean_reward}', f'std: {np.std(actions)}')
-
-
