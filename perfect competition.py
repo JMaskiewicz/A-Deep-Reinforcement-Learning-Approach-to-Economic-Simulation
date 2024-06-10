@@ -25,34 +25,31 @@ class EconomicEnv:
         return torch.clamp(150 - 2 * total_price, min=0)
 
     def step(self, actions):
-        prices = actions[:, 0]
-        productions = actions[:, 1]
+        # Sort agents by price
+        sorted_indices = torch.argsort(actions[:, 0])
+        sorted_actions = actions[sorted_indices]
 
-        # Sort the firms by their prices
-        sorted_indices = torch.argsort(prices)
-        sorted_prices = prices[sorted_indices]
-        sorted_productions = productions[sorted_indices]
-
-        total_demand = self.demand(torch.sum(sorted_prices))
+        total_demand = self.demand(sorted_actions[0, 0])
+        actual_sells = torch.zeros(len(actions))
         remaining_demand = total_demand
-        actual_sells = torch.zeros_like(sorted_productions)
 
-        for i in range(len(sorted_prices)):
-            if remaining_demand > 0:
-                actual_sell = torch.min(sorted_productions[i], remaining_demand)
-                actual_sells[i] = actual_sell
-                remaining_demand -= actual_sell
-            else:
-                actual_sells[i] = 0
+        for i in range(len(actions)):
+            price = sorted_actions[i, 0]
+            production = sorted_actions[i, 1]
 
-        revenues = sorted_prices * actual_sells
-        costs = 10 * sorted_productions + 100
+            demand_at_price = self.demand(price)
+            actual_sell = torch.min(production, remaining_demand)
+            actual_sells[sorted_indices[i]] = actual_sell
+
+            remaining_demand = remaining_demand - actual_sell
+            remaining_demand = torch.clamp(remaining_demand, min=0)
+
+        revenues = sorted_actions[:, 0] * actual_sells
+        costs = 10 * sorted_actions[:, 1] + 100
+
         profits = revenues - costs
 
-        # Re-order the profits according to the original order of the firms
-        unsorted_profits = profits[torch.argsort(sorted_indices)]
-
-        return unsorted_profits / 10
+        return profits / 10
 
 # Create two actors for the 5 firms
 actor1 = Actor()
@@ -62,11 +59,11 @@ actor4 = Actor()
 actor5 = Actor()
 
 env = EconomicEnv()
-actor_opt1 = optim.Adam(actor1.parameters(), lr=0.00075)
-actor_opt2 = optim.Adam(actor2.parameters(), lr=0.00075)
-actor_opt3 = optim.Adam(actor3.parameters(), lr=0.00075)
-actor_opt4 = optim.Adam(actor4.parameters(), lr=0.00075)
-actor_opt5 = optim.Adam(actor5.parameters(), lr=0.00075)
+actor_opt1 = optim.Adam(actor1.parameters(), lr=0.00025)
+actor_opt2 = optim.Adam(actor2.parameters(), lr=0.00025)
+actor_opt3 = optim.Adam(actor3.parameters(), lr=0.00025)
+actor_opt4 = optim.Adam(actor4.parameters(), lr=0.00025)
+actor_opt5 = optim.Adam(actor5.parameters(), lr=0.00025)
 
 # Initialize previous actions
 prev_actions1 = torch.tensor([0.0, 0.0], dtype=torch.float32)
@@ -80,7 +77,7 @@ num_episodes = 500
 sigma = 0.5  # Standard deviation for exploration noise
 
 for episode in range(num_episodes):
-    state = torch.cat([prev_actions1, prev_actions2]).unsqueeze(0)  # State includes previous actions
+    state = torch.cat([prev_actions1, prev_actions2, prev_actions3, prev_actions4, prev_actions5]).unsqueeze(0)  # State includes previous actions
 
     actions1 = actor1(state)
     actions2 = actor2(state)
@@ -160,7 +157,7 @@ for episode in range(num_episodes):
     print(f'Actions 5 {noisy_actions5.detach().numpy()}', f'Profit 5 {profit5.item():.2f}')
 
 # Testing the trained actors
-test_state = torch.cat([prev_actions1, prev_actions2]).unsqueeze(0)
+test_state = torch.cat([prev_actions1, prev_actions2, prev_actions3, prev_actions4, prev_actions5]).unsqueeze(0)
 test_actions1 = actor1(test_state)
 test_actions2 = actor2(test_state)
 print(f"Optimal Actions for Firm 1: Price {test_actions1[0,0].item():.2f}, Production {test_actions1[0,1].item():.2f}")
