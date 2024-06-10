@@ -41,6 +41,11 @@ actor_opt = optim.Adam(actor.parameters(), lr=0.005)
 num_episodes = 300
 sigma = 1  # Standard deviation for exploration noise
 
+# Assume these are filled during the training loop
+profits = []
+prices = []
+productions = []
+
 for episode in range(num_episodes):
     state = torch.tensor([[0.0]], dtype=torch.float32)  # Dummy state
     actions = actor(state)
@@ -54,6 +59,10 @@ for episode in range(num_episodes):
     loss = -env.step(action_pred)  # Use the negative of the profit as loss
     loss.backward()
     actor_opt.step()
+
+    profits.append(profit.item())
+    prices.append(noisy_actions[0, 0].item())
+    productions.append(noisy_actions[0, 1].item())
 
     sigma *= 0.99  # Decrease sigma over time to reduce exploration as learning progresses
 
@@ -87,3 +96,24 @@ profit = env.step(forced_actions)
 
 print(f"Forced Actions: Price {forced_actions[0,0].item():.2f}, Production {forced_actions[0,1].item():.2f}")
 print(f"Profit for Forced Actions: {profit.item():.2f}")
+
+import matplotlib.pyplot as plt
+
+# Plotting the profit over time
+plt.figure(figsize=(10, 5))
+plt.plot(profits, label='Profit')
+plt.title('Profit Over Episodes')
+plt.xlabel('Episode')
+plt.ylabel('Profit')
+plt.legend()
+plt.show()
+
+# Plotting price and production actions over time
+plt.figure(figsize=(10, 5))
+plt.plot(prices, label='Price')
+plt.plot(productions, label='Production')
+plt.title('Action Trends Over Episodes')
+plt.xlabel('Episode')
+plt.ylabel('Actions')
+plt.legend()
+plt.show()
