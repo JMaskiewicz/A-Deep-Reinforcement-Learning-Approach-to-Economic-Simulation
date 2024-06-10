@@ -100,8 +100,9 @@ class EconomicEnv(gym.Env):
 class ActorNetwork(nn.Module):
     def __init__(self, input_dims):
         super(ActorNetwork, self).__init__()
-        self.fc1 = nn.Linear(input_dims, 4)
-        self.mean = nn.Linear(4, 1)
+        self.fc1 = nn.Linear(input_dims, 32)
+        self.fc2 = nn.Linear(32, 32)
+        self.mean = nn.Linear(32, 1)
         self.log_std = nn.Parameter(torch.log(torch.tensor(0.1)))  # Initialize std
         self.relu = nn.ReLU()
 
@@ -111,6 +112,7 @@ class ActorNetwork(nn.Module):
 
     def forward(self, state):
         x = self.relu(self.fc1(state))
+        x = self.relu(self.fc2(x))
         mean = torch.sigmoid(self.mean(x))
         std = torch.exp(self.log_std)
         return mean, std
@@ -125,12 +127,14 @@ class ActorNetwork(nn.Module):
 class CriticNetwork(nn.Module):
     def __init__(self, input_dims):
         super(CriticNetwork, self).__init__()
-        self.fc1 = nn.Linear(input_dims, 4)
-        self.value = nn.Linear(4, 1)
+        self.fc1 = nn.Linear(input_dims, 32)
+        self.fc2 = nn.Linear(32, 32)
+        self.value = nn.Linear(32, 1)
         self.relu = nn.ReLU()
 
     def forward(self, state):
         x = self.relu(self.fc1(state))
+        x = self.relu(self.fc2(x))
         value = self.value(x)
         return value
 
