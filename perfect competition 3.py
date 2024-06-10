@@ -24,35 +24,32 @@ class EconomicEnv:
         return torch.clamp(150 - 2 * price, min=0)  #
 
     def step(self, actions):
-        # Sort actions by price
-        actions = sorted(actions, key=lambda x: x[0])
-        total_demand = 150
-        remaining_demand = total_demand
+        sorted_actions = sorted(actions, key=lambda x: x[0].item())
         sales = []
+        remaining_demand = self.demand(sorted_actions[0][0])
 
-        for price, production in actions:
-            demand = self.demand(price)
-            actual_sell = torch.min(production, torch.tensor(remaining_demand, dtype=torch.float32))
+        for i, (price, production) in enumerate(sorted_actions):
+            if i > 0:
+                remaining_demand = self.demand(price) - sum(sales)
+            actual_sell = torch.min(production, remaining_demand)
             sales.append(actual_sell)
-            remaining_demand -= actual_sell.item()
 
         profits = []
-        for i, action in enumerate(actions):
-            price, production = action
+        for i, (price, production) in enumerate(sorted_actions):
             actual_sell = sales[i]
             revenue = price * actual_sell
-            cost = 100 + 10 * production
+            cost = 10 * production + 100  # fixed cost plus variable cost
             profit = revenue - cost
             profits.append(profit)
 
-        return torch.stack(profits)  # Return tensor with requires_grad=True
+        return torch.stack(profits)
 
-num_agents = 5
+num_agents = 2
 actors = [Actor(num_agents) for _ in range(num_agents)]
-optimizers = [optim.Adam(actor.parameters(), lr=0.000075) for actor in actors]
+optimizers = [optim.Adam(actor.parameters(), lr=0.00075) for actor in actors]
 
 env = EconomicEnv()
-num_episodes = 5000
+num_episodes = 1000
 sigma = 0.5  # Standard deviation for exploration noise
 
 # Initialize previous actions
@@ -81,7 +78,7 @@ for episode in range(num_episodes):
 
     sigma *= 0.995  # Decrease sigma over time to reduce exploration as learning progresses
 
-    if episode % 10 == 0:
+    if episode % 1 == 0:
         print(f"Episode {episode}:")
         for i in range(num_agents):
             print(f"Actions {i + 1}: {noisy_actions[i].detach().numpy()}, Profit {profits[i].item():.2f}")
