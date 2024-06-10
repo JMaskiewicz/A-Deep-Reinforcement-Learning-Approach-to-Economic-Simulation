@@ -21,7 +21,7 @@ class EconomicEnv:
         self.c = 1
 
     def demand(self, price):
-        return torch.clamp(150 - 2 * price, min=0)
+        return torch.clamp(150 - 2 * price, min=0)  #
 
     def step(self, actions):
         # Sort actions by price
@@ -52,7 +52,7 @@ actors = [Actor(num_agents) for _ in range(num_agents)]
 optimizers = [optim.Adam(actor.parameters(), lr=0.000075) for actor in actors]
 
 env = EconomicEnv()
-num_episodes = 1000
+num_episodes = 5000
 sigma = 0.5  # Standard deviation for exploration noise
 
 # Initialize previous actions
@@ -79,7 +79,7 @@ for episode in range(num_episodes):
         loss.backward()
         optimizers[i].step()
 
-    sigma *= 0.99  # Decrease sigma over time to reduce exploration as learning progresses
+    sigma *= 0.995  # Decrease sigma over time to reduce exploration as learning progresses
 
     if episode % 10 == 0:
         print(f"Episode {episode}:")
