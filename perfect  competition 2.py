@@ -3,9 +3,9 @@ import torch.nn as nn
 import torch.optim as optim
 
 class Actor(nn.Module):
-    def __init__(self):
+    def __init__(self, num_agents):
         super(Actor, self).__init__()
-        self.fc1 = nn.Linear(10, 16)
+        self.fc1 = nn.Linear(num_agents * 2, 16)
         self.fc2 = nn.Linear(16, 16)
         self.fc3 = nn.Linear(16, 2)  # Two outputs: price and production
         self.sigmoid = nn.Sigmoid()
@@ -15,7 +15,6 @@ class Actor(nn.Module):
         x = torch.relu(self.fc2(x))
         x = self.fc3(x)
         return 100 * self.sigmoid(x)  # Outputs range [0, 100]
-
 
 class EconomicEnv:
     def __init__(self):
@@ -31,25 +30,24 @@ class EconomicEnv:
             demand = self.demand(price)
             actual_sell = torch.min(production, demand)
             revenue = price * actual_sell
-            cost = 10 * production + 100
+            cost = 100 + 10 * production
             profit = revenue - cost
-            profits.append(profit / 10)
-        return torch.tensor(profits)
+            profits.append(profit)
+        return torch.stack(profits)  # Return tensor with requires_grad=True
 
-# Create actors for the 5 firms
-actors = [Actor() for _ in range(5)]
-optimizers = [optim.Adam(actor.parameters(), lr=0.00025) for actor in actors]
+num_agents = 5
+actors = [Actor(num_agents) for _ in range(num_agents)]
+optimizers = [optim.Adam(actor.parameters(), lr=0.0005) for actor in actors]
 
 env = EconomicEnv()
+num_episodes = 1000
+sigma = 1  # Standard deviation for exploration noise
 
 # Initialize previous actions
-prev_actions = [torch.tensor([0.0, 0.0], dtype=torch.float32) for _ in range(5)]
-
-num_episodes = 500
-sigma = 0.5  # Standard deviation for exploration noise
+prev_actions = [torch.tensor([0.0, 0.0], dtype=torch.float32, requires_grad=True) for _ in range(num_agents)]
 
 for episode in range(num_episodes):
-    state = torch.cat(prev_actions).unsqueeze(0)  # State includes previous actions
+    state = torch.cat(prev_actions).unsqueeze(0)  # State includes previous actions of all agents
 
     actions = [actor(state) for actor in actors]
     noisy_actions = [torch.clamp(action + sigma * torch.randn_like(action), 0, 100) for action in actions]
@@ -64,16 +62,17 @@ for episode in range(num_episodes):
     for i, actor in enumerate(actors):
         optimizers[i].zero_grad()
         action_pred = actor(state)  # Predicted actions
-        all_actions = [prev_actions[j] if j != i else action_pred.squeeze() for j in range(5)]
+        all_actions = [prev_actions[j] if j != i else action_pred.squeeze() for j in range(num_agents)]
         loss = -env.step(torch.stack(all_actions))[i]  # Use the negative of the profit as loss
         loss.backward()
         optimizers[i].step()
 
     sigma *= 0.99  # Decrease sigma over time to reduce exploration as learning progresses
 
-    print(f"Episode {episode}:")
-    for i in range(5):
-        print(f"Actions {i + 1} {noisy_actions[i].detach().numpy()}, Profit {i + 1} {profits[i].item():.2f}")
+    if episode % 10 == 0:
+        print(f"Episode {episode}:")
+        for i in range(num_agents):
+            print(f"Actions {i + 1}: {noisy_actions[i].detach().numpy()}, Profit {profits[i].item():.2f}")
 
 # Testing the trained actors
 test_state = torch.cat(prev_actions).unsqueeze(0)
