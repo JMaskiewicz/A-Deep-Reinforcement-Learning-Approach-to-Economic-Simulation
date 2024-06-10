@@ -24,15 +24,27 @@ class EconomicEnv:
         return torch.clamp(150 - 2 * price, min=0)
 
     def step(self, actions):
-        profits = []
-        for action in actions:
-            price, production = action[0], action[1]
+        # Sort actions by price
+        actions = sorted(actions, key=lambda x: x[0])
+        total_demand = 150
+        remaining_demand = total_demand
+        sales = []
+
+        for price, production in actions:
             demand = self.demand(price)
-            actual_sell = torch.min(production, demand)
+            actual_sell = torch.min(production, torch.tensor(remaining_demand, dtype=torch.float32))
+            sales.append(actual_sell)
+            remaining_demand -= actual_sell.item()
+
+        profits = []
+        for i, action in enumerate(actions):
+            price, production = action
+            actual_sell = sales[i]
             revenue = price * actual_sell
             cost = 100 + 10 * production
             profit = revenue - cost
             profits.append(profit)
+
         return torch.stack(profits)  # Return tensor with requires_grad=True
 
 num_agents = 5
