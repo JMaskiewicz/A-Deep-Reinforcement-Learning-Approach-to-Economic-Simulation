@@ -59,7 +59,7 @@ class EconomicEnv(gym.Env):
         self.observation_space = spaces.Box(low=np.array([0, 0]), high=np.array([1, 1]), dtype=np.float32)
         self.current_step = 0
 
-        self.production = 0.5  # Fixed production value
+        self.production = 1  # Fixed production value
         self.price = 0
         self.demand = 0
 
@@ -67,7 +67,7 @@ class EconomicEnv(gym.Env):
         return max(2 - 1.5 * price, 0)
 
     def calculate_cost(self, production):
-        return 0.2 + 0.025 * production if production > 0 else 0
+        return 0.2 + 0.01 * production if production > 0 else 0
 
     def step(self, action):
         if len(action) != 1:
@@ -81,7 +81,7 @@ class EconomicEnv(gym.Env):
         revenue = min(self.production, self.demand) * self.price
 
         profit = revenue - cost
-        reward = profit
+        reward = profit * 100
 
         state = np.array([self.price, self.demand])
         terminated = self.current_step > 64
@@ -100,10 +100,9 @@ class EconomicEnv(gym.Env):
 class ActorNetwork(nn.Module):
     def __init__(self, input_dims):
         super(ActorNetwork, self).__init__()
-        self.fc1 = nn.Linear(input_dims, 8)
-        self.fc2 = nn.Linear(8, 8)
-        self.mean = nn.Linear(8, 1)
-        self.log_std = nn.Parameter(torch.log(torch.tensor(0.25)))  # Initialize std
+        self.fc1 = nn.Linear(input_dims, 4)
+        self.mean = nn.Linear(4, 1)
+        self.log_std = nn.Parameter(torch.log(torch.tensor(0.1)))  # Initialize std
         self.relu = nn.ReLU()
 
         # Initialize the mean layer to output values close to 0.5
@@ -112,7 +111,6 @@ class ActorNetwork(nn.Module):
 
     def forward(self, state):
         x = self.relu(self.fc1(state))
-        x = self.relu(self.fc2(x))
         mean = torch.sigmoid(self.mean(x))
         std = torch.exp(self.log_std)
         return mean, std
@@ -127,14 +125,12 @@ class ActorNetwork(nn.Module):
 class CriticNetwork(nn.Module):
     def __init__(self, input_dims):
         super(CriticNetwork, self).__init__()
-        self.fc1 = nn.Linear(input_dims, 8)
-        self.fc2 = nn.Linear(8, 8)
-        self.value = nn.Linear(8, 1)
+        self.fc1 = nn.Linear(input_dims, 4)
+        self.value = nn.Linear(4, 1)
         self.relu = nn.ReLU()
 
     def forward(self, state):
         x = self.relu(self.fc1(state))
-        x = self.relu(self.fc2(x))
         value = self.value(x)
         return value
 
@@ -167,6 +163,7 @@ class PPO:
         state_arr, action_arr, old_prob_arr, vals_arr, reward_arr, dones_arr, batches = self.memory.generate_batches()
 
         advantages = reward_arr - vals_arr
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-10)
 
         for _ in range(self.n_epochs):
             for batch in batches:
@@ -210,18 +207,18 @@ class PPO:
 
 if __name__ == '__main__':
     input_dims = 2
-    alpha = 0.0003
-    policy_clip = 0.2
+    alpha = 0.00025
+    policy_clip = 0.25
     batch_size = 64
-    n_epochs = 1000
-    entropy_coefficient = 0.1
+    n_epochs = 100
+    entropy_coefficient = 0.05
 
     agent = PPO(input_dims, alpha, policy_clip=policy_clip, batch_size=batch_size, n_epochs=n_epochs, entropy_coefficient=entropy_coefficient)
     env = EconomicEnv()
 
-    num_episodes = 25
+    num_episodes = 1000
 
-    for episode in tqdm(range(num_episodes)):
+    for episode in range(num_episodes):
         observation, _ = env.reset()
         done = False
         total_reward = 0
