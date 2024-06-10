@@ -106,7 +106,8 @@ plt.title('Profit Over Episodes')
 plt.xlabel('Episode')
 plt.ylabel('Profit')
 plt.legend()
-plt.show()
+plt.show()  # For GUI display or replace with
+plt.savefig(r'D:\studia\WNE\2023_2024\symulacje\zdj\profit_plot.png')
 
 # Plotting price and production actions over time
 plt.figure(figsize=(10, 5))
@@ -117,3 +118,4 @@ plt.xlabel('Episode')
 plt.ylabel('Actions')
 plt.legend()
 plt.show()
+plt.savefig(r'D:\studia\WNE\2023_2024\symulacje\zdj\profit_plot_2.png')

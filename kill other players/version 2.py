@@ -27,9 +27,9 @@ class Actor(nn.Module):
 class ActorCritic(nn.Module):
     def __init__(self):
         super(ActorCritic, self).__init__()
-        self.fc1 = nn.Linear(4, 128)
-        self.fc_actor = nn.Linear(128, 2)
-        self.fc_critic = nn.Linear(128, 1)
+        self.fc1 = nn.Linear(4, 32)
+        self.fc_actor = nn.Linear(32, 2)
+        self.fc_critic = nn.Linear(32, 1)
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
         self.bankrupt = False
@@ -83,8 +83,8 @@ opt_actor_critic2 = optim.Adam(actor_critic2.parameters(), lr=0.0005)
 env = EconomicEnv()
 
 num_episodes = 2000
-gamma = 0.99  # Discount factor for future rewards
-sigma = 0.5   # Standard deviation for exploration noise
+gamma = 0.95  # Discount factor for future rewards
+sigma = 0.75   # Standard deviation for exploration noise
 
 # Tracking for bankruptcy
 consecutive_negatives1 = 0
@@ -92,7 +92,7 @@ consecutive_negatives2 = 0
 bankruptcy_threshold = 50
 
 for episode in range(num_episodes):
-    state = torch.cat([torch.tensor([50.0, 30.0]), torch.tensor([50.0, 30.0])]).unsqueeze(0)
+    state = torch.cat([torch.tensor([0.0, 0.0]), torch.tensor([0.0, 0.0])]).unsqueeze(0)
 
     # Get actions from actor1
     actions1 = actor1(state)  # Ensure actions1 has shape [2]
@@ -109,15 +109,12 @@ for episode in range(num_episodes):
     # Combine actions into a single tensor
     actions = torch.stack([noisy_actions1, noisy_actions2])
 
-    # Debugging: Print the shape of actions
-    print(f"Episode {episode}: Actions shape: {actions.shape}")
-
     # Get profits for both firms
     profit1, profit2 = env.step(actions)
 
-    # Ensure profits require gradients
-    profit1 = profit1.requires_grad_()
-    profit2 = profit2.requires_grad_()
+    # Ensure profits require gradients by creating them directly from operations involving requires_grad=True tensors
+    profit1 = torch.tensor(profit1, requires_grad=True)
+    profit2 = torch.tensor(profit2, requires_grad=True)
 
     # Prepare for the next state's value estimate
     next_state = state  # In a real case, you'd get this from the environment
@@ -141,7 +138,7 @@ for episode in range(num_episodes):
     opt_actor_critic2.step()
 
     # Decay exploration noise
-    sigma *= 0.99
+    sigma = sigma * 0.999
 
     # Update bankruptcy status based on profit
     consecutive_negatives1 = 0 if profit1.item() >= 0 else consecutive_negatives1 + 1
@@ -153,7 +150,7 @@ for episode in range(num_episodes):
         actor_critic2.bankrupt = True
 
     # Optional: Print episode results
-    if episode % 100 == 0:  # Print every 100 episodes
+    if episode % 1 == 0:  # Print every 100 episodes
         print(f"Episode {episode}:\nActions 1 {noisy_actions1.detach().numpy()}, Profit 1 {profit1.item():.2f}")
         print(f"Actions 2 {noisy_actions2.detach().numpy()}, Profit 2 {profit2.item():.2f}")
 
