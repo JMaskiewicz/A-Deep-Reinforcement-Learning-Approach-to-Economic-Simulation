@@ -2,13 +2,10 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-# Enable anomaly detection
-torch.autograd.set_detect_anomaly(True)
-
 class Actor(nn.Module):
-    def __init__(self, num_agents):
+    def __init__(self):
         super(Actor, self).__init__()
-        self.fc1 = nn.Linear(2 * num_agents, 16)  # 2*num_agents inputs: price and production of all agents
+        self.fc1 = nn.Linear(10, 16)
         self.fc2 = nn.Linear(16, 16)
         self.fc3 = nn.Linear(16, 2)  # Two outputs: price and production
         self.sigmoid = nn.Sigmoid()
@@ -19,6 +16,7 @@ class Actor(nn.Module):
         x = self.fc3(x)
         return 100 * self.sigmoid(x)  # Outputs range [0, 100]
 
+
 class EconomicEnv:
     def __init__(self):
         self.c = 1
@@ -27,78 +25,146 @@ class EconomicEnv:
         return torch.clamp(150 - 2 * total_price, min=0)
 
     def step(self, actions):
-        # Sort agents by price
-        sorted_indices = torch.argsort(actions[:, 0])
-        sorted_actions = actions[sorted_indices]
+        prices = actions[:, 0]
+        productions = actions[:, 1]
 
-        total_demand = self.demand(sorted_actions[0, 0])
-        actual_sells = torch.zeros(len(actions))
+        # Sort the firms by their prices
+        sorted_indices = torch.argsort(prices)
+        sorted_prices = prices[sorted_indices]
+        sorted_productions = productions[sorted_indices]
+
+        total_demand = self.demand(torch.sum(sorted_prices))
         remaining_demand = total_demand
+        actual_sells = torch.zeros_like(sorted_productions)
 
-        for i in range(len(actions)):
-            price = sorted_actions[i, 0]
-            production = sorted_actions[i, 1]
+        for i in range(len(sorted_prices)):
+            if remaining_demand > 0:
+                actual_sell = torch.min(sorted_productions[i], remaining_demand)
+                actual_sells[i] = actual_sell
+                remaining_demand -= actual_sell
+            else:
+                actual_sells[i] = 0
 
-            demand_at_price = self.demand(price)
-            actual_sell = torch.min(production, remaining_demand)
-            actual_sells[sorted_indices[i]] = actual_sell
-
-            remaining_demand = remaining_demand - actual_sell
-            remaining_demand = torch.clamp(remaining_demand, min=0)
-
-        revenues = sorted_actions[:, 0] * actual_sells
-        costs = 10 * sorted_actions[:, 1] + 100
-
+        revenues = sorted_prices * actual_sells
+        costs = 10 * sorted_productions + 100
         profits = revenues - costs
 
-        return profits / 10
+        # Re-order the profits according to the original order of the firms
+        unsorted_profits = profits[torch.argsort(sorted_indices)]
 
-# Parameters
-num_agents = 2
-num_episodes = 100
-sigma = 0.5  # Standard deviation for exploration noise
-lr = 0.00075
+        return unsorted_profits / 10
 
-# Create actors and optimizers for each agent
-actors = [Actor(num_agents) for _ in range(num_agents)]
-optimizers = [optim.Adam(actor.parameters(), lr=lr) for actor in actors]
+# Create two actors for the 5 firms
+actor1 = Actor()
+actor2 = Actor()
+actor3 = Actor()
+actor4 = Actor()
+actor5 = Actor()
+
 env = EconomicEnv()
+actor_opt1 = optim.Adam(actor1.parameters(), lr=0.00075)
+actor_opt2 = optim.Adam(actor2.parameters(), lr=0.00075)
+actor_opt3 = optim.Adam(actor3.parameters(), lr=0.00075)
+actor_opt4 = optim.Adam(actor4.parameters(), lr=0.00075)
+actor_opt5 = optim.Adam(actor5.parameters(), lr=0.00075)
 
 # Initialize previous actions
-# Initialize previous actions
-prev_actions = [torch.tensor([0.0, 0.0], dtype=torch.float32) for _ in range(num_agents)]
+prev_actions1 = torch.tensor([0.0, 0.0], dtype=torch.float32)
+prev_actions2 = torch.tensor([0.0, 0.0], dtype=torch.float32)
+prev_actions3 = torch.tensor([0.0, 0.0], dtype=torch.float32)
+prev_actions4 = torch.tensor([0.0, 0.0], dtype=torch.float32)
+prev_actions5 = torch.tensor([0.0, 0.0], dtype=torch.float32)
+
+
+num_episodes = 500
+sigma = 0.5  # Standard deviation for exploration noise
 
 for episode in range(num_episodes):
-    # Create state as concatenation of prices and productions of all agents
-    state = torch.cat(prev_actions).unsqueeze(0)  # State includes previous actions of all agents
+    state = torch.cat([prev_actions1, prev_actions2]).unsqueeze(0)  # State includes previous actions
 
-    actions = []
-    for actor in actors:
-        actions.append(actor(state))
+    actions1 = actor1(state)
+    actions2 = actor2(state)
+    actions3 = actor3(state)
+    actions4 = actor4(state)
+    actions5 = actor5(state)
 
-    noisy_actions = []
-    for action in actions:
-        noisy_action = action + sigma * torch.randn_like(action)
-        noisy_action = torch.clamp(noisy_action, 0, 100)  # Ensure actions stay within valid range
-        noisy_actions.append(noisy_action)
+    noisy_actions1 = actions1 + sigma * torch.randn_like(actions1)
+    noisy_actions2 = actions2 + sigma * torch.randn_like(actions2)
+    noisy_actions3 = actions3 + sigma * torch.randn_like(actions3)
+    noisy_actions4 = actions4 + sigma * torch.randn_like(actions4)
+    noisy_actions5 = actions5 + sigma * torch.randn_like(actions5)
 
-    actions_tensor = torch.stack([action.squeeze() for action in noisy_actions])
-    profits = env.step(actions_tensor)
+    noisy_actions1 = torch.clamp(noisy_actions1, 0, 100)
+    noisy_actions2 = torch.clamp(noisy_actions2, 0, 100)
+    noisy_actions3 = torch.clamp(noisy_actions3, 0, 100)
+    noisy_actions4 = torch.clamp(noisy_actions4, 0, 100)
+    noisy_actions5 = torch.clamp(noisy_actions5, 0, 100)
+
+
+    actions = torch.stack([noisy_actions1.squeeze(), noisy_actions2.squeeze(), noisy_actions3.squeeze(), noisy_actions4.squeeze(), noisy_actions5.squeeze()])
+    profit1, profit2, profit3, profit4, profit5 = env.step(actions)
 
     # Update previous actions
-    prev_actions = [action.detach().squeeze() for action in noisy_actions]
+    prev_actions1 = noisy_actions1.detach().squeeze()
+    prev_actions2 = noisy_actions2.detach().squeeze()
+    prev_actions3 = noisy_actions3.detach().squeeze()
+    prev_actions4 = noisy_actions4.detach().squeeze()
+    prev_actions5 = noisy_actions5.detach().squeeze()
 
-    for i in range(num_agents):
-        optimizers[i].zero_grad()
-        action_pred = actors[i](state)  # Predicted actions
-        action_list = [prev_actions[j] if j != i else action_pred.squeeze() for j in range(num_agents)]
-        profit = env.step(torch.stack(action_list))[i]
-        loss = -profit  # Use the negative of the profit as loss
-        loss.backward()
-        optimizers[i].step()
+    # Update actor1
+    actor_opt1.zero_grad()
+    action_pred1 = actor1(state)  # Predicted actions
+    all_actions = torch.stack([action_pred1.squeeze(), prev_actions2, prev_actions3, prev_actions4, prev_actions5])
+    loss1 = -env.step(all_actions)[0]  # Use the negative of the profit as loss
+    loss1.backward()
+    actor_opt1.step()
+
+    # Update actor2
+    actor_opt2.zero_grad()
+    action_pred2 = actor2(state)  # Predicted actions
+    all_actions = torch.stack([prev_actions1, action_pred2.squeeze(), prev_actions3, prev_actions4, prev_actions5])
+    loss2 = -env.step(all_actions)[1]  # Use the negative of the profit as loss
+    loss2.backward()
+    actor_opt2.step()
+
+    # Update actor3
+    actor_opt3.zero_grad()
+    action_pred3 = actor3(state)  # Predicted actions
+    all_actions = torch.stack([prev_actions1, prev_actions2, action_pred3.squeeze(), prev_actions4, prev_actions5])
+    loss3 = -env.step(all_actions)[2]  # Use the negative of the profit as loss
+    loss3.backward()
+    actor_opt3.step()
+
+    # Update actor4
+    actor_opt4.zero_grad()
+    action_pred4 = actor4(state)  # Predicted actions
+    all_actions = torch.stack([prev_actions1, prev_actions2, prev_actions3, action_pred4.squeeze(), prev_actions5])
+    loss4 = -env.step(all_actions)[3]  # Use the negative of the profit as loss
+    loss4.backward()
+    actor_opt4.step()
+
+    # Update actor5
+    actor_opt5.zero_grad()
+    action_pred5 = actor5(state)  # Predicted actions
+    all_actions = torch.stack([prev_actions1, prev_actions2, prev_actions3, prev_actions4, action_pred5.squeeze()])
+    loss5 = -env.step(all_actions)[4]  # Use the negative of the profit as loss
+    loss5.backward()
+    actor_opt5.step()
 
     sigma *= 0.99  # Decrease sigma over time to reduce exploration as learning progresses
 
-    print(f"Episode {episode}:")
-    for i in range(num_agents):
-        print(f"Actions {i + 1} {noisy_actions[i].detach().numpy()}, Profit {i + 1} {profits[i].item():.2f}")
+    print(f"Episode {episode}:\nActions 1 {noisy_actions1.detach().numpy()}, Profit 1 {profit1.item():.2f}")
+    print(f'Actions 2 {noisy_actions2.detach().numpy()}', f'Profit 2 {profit2.item():.2f}')
+    print(f'Actions 3 {noisy_actions3.detach().numpy()}', f'Profit 3 {profit3.item():.2f}')
+    print(f'Actions 4 {noisy_actions4.detach().numpy()}', f'Profit 4 {profit4.item():.2f}')
+    print(f'Actions 5 {noisy_actions5.detach().numpy()}', f'Profit 5 {profit5.item():.2f}')
+
+# Testing the trained actors
+test_state = torch.cat([prev_actions1, prev_actions2]).unsqueeze(0)
+test_actions1 = actor1(test_state)
+test_actions2 = actor2(test_state)
+print(f"Optimal Actions for Firm 1: Price {test_actions1[0,0].item():.2f}, Production {test_actions1[0,1].item():.2f}")
+print(f"Optimal Actions for Firm 2: Price {test_actions2[0,0].item():.2f}, Production {test_actions2[0,1].item():.2f}")
+print(f"Optimal Actions for Firm 3: Price {test_actions2[0,0].item():.2f}, Production {test_actions2[0,1].item():.2f}")
+print(f"Optimal Actions for Firm 4: Price {test_actions2[0,0].item():.2f}, Production {test_actions2[0,1].item():.2f}")
+print(f"Optimal Actions for Firm 5: Price {test_actions2[0,0].item():.2f}, Production {test_actions2[0,1].item():.2f}")
