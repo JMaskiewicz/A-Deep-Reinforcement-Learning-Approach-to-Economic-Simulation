@@ -165,24 +165,27 @@ for game in range(num_games):
     rewards1 = torch.tensor(rewards1)
     rewards2 = torch.tensor(rewards2)
 
-    # Update actor1
+    # Compute loss for actor1
     actor_opt1.zero_grad()
     action_preds1 = actor1(states)
-    loss1 = -rewards1 + gamma * -torch.stack([env.step(torch.stack([action_pred1.squeeze(), action2]))[0]
-                                              for action_pred1, action2 in zip(action_preds1, actions2)]).mean()
+    future_rewards1 = torch.stack([env.step(torch.stack([action_pred1, action2]))[0]
+                                   for action_pred1, action2 in zip(action_preds1, actions2)])
+    loss1 = -rewards1 + gamma * future_rewards1.squeeze()
+    loss1 = loss1.mean()
     loss1.backward()
     actor_opt1.step()
 
-    # Update actor2
+    # Compute loss for actor2
     actor_opt2.zero_grad()
     action_preds2 = actor2(states)
-    loss2 = -rewards2 + gamma * -torch.stack([env.step(torch.stack([action1, action_pred2.squeeze()]))[1]
-                                              for action_pred2, action1 in zip(action_preds2, actions1)]).mean()
+    future_rewards2 = torch.stack([env.step(torch.stack([action1, action_pred2]))[1]
+                                   for action_pred2, action1 in zip(action_preds2, actions1)])
+    loss2 = -rewards2 + gamma * future_rewards2.squeeze()
+    loss2 = loss2.mean()
     loss2.backward()
     actor_opt2.step()
 
     memory.clear()  # Clear memory after each game
-
 
 
 # Plot profits
