@@ -50,7 +50,7 @@ class EconomicEnv:
 
         revenue1 = price1 * actual_sell1
         revenue2 = price2 * actual_sell2
-        cost1 = 10 * production1 + 100
+        cost1 = 30 * production1 + 100
         cost2 = 10 * production2 + 100
         profit1 = revenue1 - cost1
         profit2 = revenue2 - cost2
@@ -60,13 +60,13 @@ class EconomicEnv:
 # Initialize actor-critics and optimizers
 actor_critic1 = ActorCritic()
 actor_critic2 = ActorCritic()
-opt_actor_critic1 = optim.Adam(actor_critic1.parameters(), lr=0.001)
-opt_actor_critic2 = optim.Adam(actor_critic2.parameters(), lr=0.001)
+opt_actor_critic1 = optim.Adam(actor_critic1.parameters(), lr=0.0005)
+opt_actor_critic2 = optim.Adam(actor_critic2.parameters(), lr=0.0005)
 
 env = EconomicEnv()
 
-num_episodes = 4000
-gamma = 0  # Discount factor for future rewards
+num_episodes = 2000
+gamma = 0.5  # Discount factor for future rewards
 sigma = 1   # Standard deviation for exploration noise
 
 # Initialize previous actions

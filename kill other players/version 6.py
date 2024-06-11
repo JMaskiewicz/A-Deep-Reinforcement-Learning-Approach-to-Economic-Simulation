@@ -26,7 +26,7 @@ class EconomicEnv:
         self.c = 1
 
     def demand(self, total_price):
-        return torch.clamp(150 - 2 * total_price, min=0)
+        return torch.clamp(150 - 3 * total_price, min=0)
 
     def step(self, actions):
         price1, production1 = actions[0, 0], actions[0, 1]
@@ -46,7 +46,7 @@ class EconomicEnv:
         revenue1 = price1 * actual_sell1
         revenue2 = price2 * actual_sell2
 
-        cost1 = 10 * production1 + 100  # provide also with 1
+        cost1 = 30 * production1 + 100  # provide also with 1
         cost2 = 10 * production2 + 100
 
         profit1 = revenue1 - cost1
@@ -59,12 +59,20 @@ env = EconomicEnv()
 # Initialize actors and optimizers
 actor1 = Actor()
 actor2 = Actor()
-actor_opt1 = optim.Adam(actor1.parameters(), lr=0.0005)
-actor_opt2 = optim.Adam(actor2.parameters(), lr=0.0005)
+actor_opt1 = optim.Adam(actor1.parameters(), lr=0.00075)
+actor_opt2 = optim.Adam(actor2.parameters(), lr=0.00075)
 
-num_episodes = 200
+num_episodes = 100
 bankruptcy_threshold = 25
-sigma = 0.5  # Standard deviation for exploration noise
+sigma = 0.75  # Standard deviation for exploration noise
+
+# Track data for plots only for the last episode
+all_profits1 = []
+all_profits2 = []
+all_prices1 = []
+all_prices2 = []
+all_productions1 = []
+all_productions2 = []
 
 for episode in range(num_episodes):
     actor1.bankrupt = False
@@ -81,6 +89,11 @@ for episode in range(num_episodes):
     action_history2 = []
     profit_history1 = []
     profit_history2 = []
+
+    price_history1 = []
+    price_history2 = []
+    production_history1 = []
+    production_history2 = []
 
     prev_actions1 = torch.tensor([0.0, 0.0], dtype=torch.float32)
     prev_actions2 = torch.tensor([0.0, 0.0], dtype=torch.float32)
@@ -101,8 +114,8 @@ for episode in range(num_episodes):
         state_history.append(state)
         action_history1.append(noisy_actions1)
         action_history2.append(noisy_actions2)
-        profit_history1.append(profit1)
-        profit_history2.append(profit2)
+        profit_history1.append(profit1.item())
+        profit_history2.append(profit2.item())
 
         # Update previous actions for the next state
         prev_actions1 = noisy_actions1.detach().squeeze()
@@ -122,6 +135,17 @@ for episode in range(num_episodes):
             print(f"Actions 1 {noisy_actions1.detach().numpy()}, Profit 1 {profit1.item():.2f}")
             print(f'Actions 2 {noisy_actions2.detach().numpy()}', f'Profit 2 {profit2.item():.2f}')
 
+        if episode == num_episodes - 1:
+            # Store cumulative profits for the last episode
+            all_profits1.append(profit1.item())
+            all_profits2.append(profit2.item())
+
+            # Store last prices and productions for the last episode
+            all_prices1.append(noisy_actions1[0, 0].item())
+            all_prices2.append(noisy_actions2[0, 0].item())
+            all_productions1.append(noisy_actions1[0, 1].item())
+            all_productions2.append(noisy_actions2[0, 1].item())
+
     # Compute cumulative loss for the episode
     for i in range(100):
         state = state_history[i]
@@ -134,7 +158,7 @@ for episode in range(num_episodes):
         cumulative_loss1 = cumulative_loss1 + loss1.requires_grad_()
         cumulative_loss2 = cumulative_loss2 + loss2.requires_grad_()
 
-        # Apply gradients
+    # Apply gradients
     actor_opt1.zero_grad()
     cumulative_loss1.backward()
     actor_opt1.step()
@@ -143,5 +167,35 @@ for episode in range(num_episodes):
     cumulative_loss2.backward()
     actor_opt2.step()
 
-    sigma *= 0.99
+    sigma *= 0.95
     print(f"Episode {episode}: Profit1 {sum(profit_history1)}, Profit2 {sum(profit_history2)}")
+
+# Plot profits
+plt.figure(figsize=(12, 6))
+plt.plot(all_profits1, label='Firm 1 Profit')
+plt.plot(all_profits2, label='Firm 2 Profit')
+plt.xlabel('Step')
+plt.ylabel('Profit')
+plt.legend()
+plt.title('Profit during the Last Episode')
+plt.savefig(r'D:\studia\WNE\2023_2024\symulacje\zdj\oligopol4\profits.png')
+
+# Plot prices
+plt.figure(figsize=(12, 6))
+plt.plot(all_prices1, label='Firm 1 Price')
+plt.plot(all_prices2[0], label='Firm 2 Price')
+plt.xlabel('Step')
+plt.ylabel('Price')
+plt.legend()
+plt.title('Price during the Last Episode')
+plt.savefig(r'D:\studia\WNE\2023_2024\symulacje\zdj\oligopol4\prices.png')
+
+# Plot productions
+plt.figure(figsize=(12, 6))
+plt.plot(all_productions1, label='Firm 1 Production')
+plt.plot(all_productions2, label='Firm 2 Production')
+plt.xlabel('Step')
+plt.ylabel('Production')
+plt.legend()
+plt.title('Production during the Last Episode')
+plt.savefig(r'D:\studia\WNE\2023_2024\symulacje\zdj\oligopol4\productions.png')

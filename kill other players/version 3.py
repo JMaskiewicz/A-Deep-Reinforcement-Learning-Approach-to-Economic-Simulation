@@ -67,7 +67,7 @@ class EconomicEnv:
 
         revenue1 = price1 * actual_sell1
         revenue2 = price2 * actual_sell2
-        cost1 = 20 * production1 + 100
+        cost1 = 15 * production1 + 100
         cost2 = 10 * production2 + 100
         profit1 = revenue1 - cost1
         profit2 = revenue2 - cost2

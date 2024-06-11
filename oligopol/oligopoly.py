@@ -22,7 +22,7 @@ class EconomicEnv:
         self.c = 1
 
     def demand(self, total_price):
-        return torch.clamp(150 - 2 * total_price, min=0)
+        return torch.clamp(torch.exp(-total_price / 20) * 100, min=0)
 
     def step(self, actions):
         price1, production1 = actions[0, 0], actions[0, 1]
@@ -42,7 +42,7 @@ class EconomicEnv:
         revenue1 = price1 * actual_sell1
         revenue2 = price2 * actual_sell2
 
-        cost1 = 10 * production1 + 100  # provide also with 1
+        cost1 = 20 * production1 + 100  # provide also with 1
         cost2 = 10 * production2 + 100
 
         profit1 = revenue1 - cost1
