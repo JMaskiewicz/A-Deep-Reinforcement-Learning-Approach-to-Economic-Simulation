@@ -128,14 +128,14 @@ for game in range(num_games):
         # Update actor1
         actor_opt1.zero_grad()
         action_pred1 = actor1(state)  # Predicted actions
-        loss1 = -env.step(torch.stack([action_pred1.squeeze(), prev_actions2]))[0]  # Use the negative of the profit as loss
+        loss1 = -env.step(torch.stack([action_pred1.squeeze(), prev_actions2]))[0]
         loss1.backward()
         actor_opt1.step()
 
         # Update actor2
         actor_opt2.zero_grad()
         action_pred2 = actor2(state)  # Predicted actions
-        loss2 = -env.step(torch.stack([prev_actions1, action_pred2.squeeze()]))[1]  # Use the negative of the profit as loss
+        loss2 = -env.step(torch.stack([prev_actions1, action_pred2.squeeze()]))[1]
         loss2.backward()
         actor_opt2.step()
 
