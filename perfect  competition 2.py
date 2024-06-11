@@ -37,11 +37,11 @@ class EconomicEnv:
 
 num_agents = 5
 actors = [Actor(num_agents) for _ in range(num_agents)]
-optimizers = [optim.Adam(actor.parameters(), lr=0.000075) for actor in actors]
+optimizers = [optim.Adam(actor.parameters(), lr=0.00005) for actor in actors]
 
 env = EconomicEnv()
 num_episodes = 1000
-sigma = 0.5  # Standard deviation for exploration noise
+sigma = 0.25  # Standard deviation for exploration noise
 
 # Initialize previous actions
 prev_actions = [torch.tensor([0.0, 0.0], dtype=torch.float32, requires_grad=True) for _ in range(num_agents)]

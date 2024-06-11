@@ -1,0 +1,163 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import matplotlib.pyplot as plt
+
+# Enable anomaly detection
+torch.autograd.set_detect_anomaly(True)
+
+# Actor-Critic for Firm 1 (Replacing Actor with ActorCritic)
+class ActorCritic(nn.Module):
+    def __init__(self):
+        super(ActorCritic, self).__init__()
+        self.fc1 = nn.Linear(4, 32)
+        self.fc_actor = nn.Linear(32, 2)
+        self.fc_critic = nn.Linear(32, 1)
+        self.relu = nn.ReLU()
+        self.sigmoid = nn.Sigmoid()
+        self.bankrupt = False
+
+    def forward(self, state):
+        if self.bankrupt:
+            return torch.tensor([0.0, 0.0], dtype=torch.float32), torch.tensor([0.0], dtype=torch.float32)
+        x = self.relu(self.fc1(state))
+        action = 100 * self.sigmoid(self.fc_actor(x))
+        value = self.fc_critic(x)
+        return action, value
+
+# Economic Environment
+class EconomicEnv:
+    def __init__(self):
+        self.c = 1
+
+    def demand(self, total_price):
+        return torch.clamp(150 - 2 * total_price, min=0)
+
+    def step(self, actions):
+        price1, production1 = actions[0, 0], actions[0, 1]
+        price2, production2 = actions[1, 0], actions[1, 1]
+
+        if price1 < price2:
+            demand1 = self.demand(price1)
+            actual_sell1 = torch.min(production1, demand1)
+            remaining_demand = self.demand(price2) - actual_sell1
+            actual_sell2 = torch.min(production2, remaining_demand)
+        else:
+            demand2 = self.demand(price2)
+            actual_sell2 = torch.min(production2, demand2)
+            remaining_demand = self.demand(price1) - actual_sell2
+            actual_sell1 = torch.min(production1, remaining_demand)
+
+        revenue1 = price1 * actual_sell1
+        revenue2 = price2 * actual_sell2
+        cost1 = 10 * production1 + 100
+        cost2 = 10 * production2 + 100
+        profit1 = revenue1 - cost1
+        profit2 = revenue2 - cost2
+        return profit1 / 10, profit2 / 10
+
+
+# Initialize actor-critics and optimizers
+actor_critic1 = ActorCritic()
+actor_critic2 = ActorCritic()
+opt_actor_critic1 = optim.Adam(actor_critic1.parameters(), lr=0.001)
+opt_actor_critic2 = optim.Adam(actor_critic2.parameters(), lr=0.001)
+
+env = EconomicEnv()
+
+num_games = 100
+steps_per_game = 100
+gamma = 0  # Discount factor for future rewards
+initial_sigma = 1  # Standard deviation for exploration noise
+
+# Initialize previous actions
+prev_actions1 = torch.tensor([0.0, 0.0], dtype=torch.float32, requires_grad=True)
+prev_actions2 = torch.tensor([0.0, 0.0], dtype=torch.float32, requires_grad=True)
+
+# Track prices, productions, and profits over games
+prices1 = []
+prices2 = []
+productions1 = []
+productions2 = []
+profits1 = []
+profits2 = []
+
+# Tracking for bankruptcy
+consecutive_negatives1 = 0
+consecutive_negatives2 = 0
+bankruptcy_threshold = 25
+
+for game in range(num_games):
+    sigma = initial_sigma * (0.99 ** game)  # Decrease sigma after each game
+
+    for step in range(steps_per_game):
+        state = torch.cat([prev_actions1, prev_actions2]).unsqueeze(0)
+
+        # Get actions and state values from actor_critic1
+        actions1, state_value1 = actor_critic1(state)
+        actions1 = actions1.squeeze()
+
+        # Get actions and state values from actor_critic2
+        actions2, state_value2 = actor_critic2(state)
+        actions2 = actions2.squeeze()
+
+        # Add exploration noise and clamp
+        noisy_actions1 = torch.clamp(actions1 + sigma * torch.randn_like(actions1), 0, 100)
+        noisy_actions2 = torch.clamp(actions2 + sigma * torch.randn_like(actions2), 0, 100)
+
+        # Combine actions into a single tensor
+        actions = torch.stack([noisy_actions1, noisy_actions2])
+
+        # Get profits for both firms
+        profit1, profit2 = env.step(actions)
+
+        # Track prices, productions, and profits
+        prices1.append(noisy_actions1[0].item())
+        prices2.append(noisy_actions2[0].item())
+        productions1.append(noisy_actions1[1].item())
+        productions2.append(noisy_actions2[1].item())
+        profits1.append(profit1.item())
+        profits2.append(profit2.item())
+
+        # Ensure profits require gradients by creating them directly from operations involving requires_grad=True tensors
+        profit1 = torch.tensor(profit1, requires_grad=True)
+        profit2 = torch.tensor(profit2, requires_grad=True)
+
+        # Prepare for the next state's value estimate
+        next_state = state  # In a real case, you'd get this from the environment
+        _, next_value1 = actor_critic1(next_state)  # Get next state value prediction
+        _, next_value2 = actor_critic2(next_state)  # Get next state value prediction
+
+        # Calculate TD targets and errors
+        td_target1 = profit1 + gamma * next_value1.detach()  # Detach to prevent connection to next graph
+        td_error1 = td_target1 - state_value1
+
+        td_target2 = profit2 + gamma * next_value2.detach()  # Detach to prevent connection to next graph
+        td_error2 = td_target2 - state_value2
+
+        # Update bankruptcy status based on profit
+        consecutive_negatives1 = 0 if profit1.item() >= 0 else consecutive_negatives1 + 1
+        consecutive_negatives2 = 0 if profit2.item() >= 0 else consecutive_negatives2 + 1
+
+        if consecutive_negatives1 >= bankruptcy_threshold:
+            actor_critic1.bankrupt = True
+        if consecutive_negatives2 >= bankruptcy_threshold:
+            actor_critic2.bankrupt = True
+
+        # Optional: Print step results
+        if step % 10 == 0:  # Print every 10 steps
+            print(f"Game {game}, Step {step}:\nActions 1 {noisy_actions1.detach().numpy()}, Profit 1 {profit1.item():.2f}")
+            print(f"Actions 2 {noisy_actions2.detach().numpy()}, Profit 2 {profit2.item():.2f}")
+
+    # Perform learning after each game
+    opt_actor_critic1.zero_grad()
+    actor_loss1 = (-state_value1 * actions1).mean()  # Policy gradient part
+    total_loss1 = td_error1.pow(2).mean() + actor_loss1  # Total loss
+    total_loss1.backward(retain_graph=True)  # Retain graph for subsequent backward pass
+    opt_actor_critic1.step()
+
+    opt_actor_critic2.zero_grad()
+    actor_loss2 = (-state_value2 * actions2).mean()  # Policy gradient part
+    total_loss2 = td_error2.pow(2).mean() + actor_loss2  # Total loss
+    total_loss2.backward()  # No need for retain_graph=True because this is the only backward pass
+    opt_actor_critic2.step()

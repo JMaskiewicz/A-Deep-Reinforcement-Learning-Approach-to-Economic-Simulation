@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import matplotlib.pyplot as plt
 
 class Actor(nn.Module):
     def __init__(self):
@@ -62,8 +63,8 @@ actor1 = Actor()
 actor2 = Actor()
 
 env = EconomicEnv()
-actor_opt1 = optim.Adam(actor1.parameters(), lr=0.00075)
-actor_opt2 = optim.Adam(actor2.parameters(), lr=0.00075)
+actor_opt1 = optim.Adam(actor1.parameters(), lr=0.0005)
+actor_opt2 = optim.Adam(actor2.parameters(), lr=0.0005)
 
 num_episodes = 1000
 sigma = 0.5  # Standard deviation for exploration noise
@@ -71,6 +72,14 @@ sigma = 0.5  # Standard deviation for exploration noise
 # Initialize previous actions
 prev_actions1 = torch.tensor([0.0, 0.0], dtype=torch.float32)
 prev_actions2 = torch.tensor([0.0, 0.0], dtype=torch.float32)
+
+# Track prices, productions, and profits over episodes
+prices1 = []
+prices2 = []
+productions1 = []
+productions2 = []
+profits1 = []
+profits2 = []
 
 for episode in range(num_episodes):
     state = torch.cat([prev_actions1, prev_actions2]).unsqueeze(0)  # State includes previous actions
@@ -86,6 +95,14 @@ for episode in range(num_episodes):
 
     actions = torch.stack([noisy_actions1.squeeze(), noisy_actions2.squeeze()])
     profit1, profit2 = env.step(actions)
+
+    # Track prices, productions, and profits
+    prices1.append(noisy_actions1[0, 0].item())
+    prices2.append(noisy_actions2[0, 0].item())
+    productions1.append(noisy_actions1[0, 1].item())
+    productions2.append(noisy_actions2[0, 1].item())
+    profits1.append(profit1.item())
+    profits2.append(profit2.item())
 
     # Update previous actions
     prev_actions1 = noisy_actions1.detach().squeeze()
@@ -110,6 +127,42 @@ for episode in range(num_episodes):
     print(env.counter)
     print(f"Episode {episode}:\nActions 1 {noisy_actions1.detach().numpy()}, Profit 1 {profit1.item():.2f}")
     print(f'Actions 2 {noisy_actions2.detach().numpy()}', f'Profit 2 {profit2.item():.2f}')
+
+# Plot profits
+plt.figure(figsize=(12, 6))
+plt.plot(profits1, label='Firm 1 Profit')
+plt.plot(profits2, label='Firm 2 Profit')
+plt.axvline(x=500, color='r', linestyle='--')
+plt.xlabel('Episode')
+plt.ylabel('Profit')
+plt.legend()
+plt.title('Profit over Episodes')
+plt.savefig(r'D:\studia\WNE\2023_2024\symulacje\zdj\oligopol2\profits.png')
+plt.show()
+
+# Plot prices
+plt.figure(figsize=(12, 6))
+plt.plot(prices1, label='Firm 1 Price')
+plt.plot(prices2, label='Firm 2 Price')
+plt.axvline(x=500, color='r', linestyle='--')
+plt.xlabel('Episode')
+plt.ylabel('Price')
+plt.legend()
+plt.title('Price over Episodes')
+plt.savefig(r'D:\studia\WNE\2023_2024\symulacje\zdj\oligopol2\prices.png')
+plt.show()
+
+# Plot productions
+plt.figure(figsize=(12, 6))
+plt.plot(productions1, label='Firm 1 Production')
+plt.plot(productions2, label='Firm 2 Production')
+plt.axvline(x=500, color='r', linestyle='--')
+plt.xlabel('Episode')
+plt.ylabel('Production')
+plt.legend()
+plt.title('Production over Episodes')
+plt.savefig(r'D:\studia\WNE\2023_2024\symulacje\zdj\oligopol2\productions.png')
+plt.show()
 
 # Testing the trained actors
 test_state = torch.cat([prev_actions1, prev_actions2]).unsqueeze(0)
