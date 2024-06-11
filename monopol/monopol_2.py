@@ -41,6 +41,11 @@ actor_opt = optim.Adam(actor.parameters(), lr=0.005)
 num_episodes = 500
 sigma = 1  # Standard deviation for exploration noise
 
+# Assume these are filled during the training loop
+profits = []
+prices = []
+productions = []
+
 for episode in range(num_episodes):
     state = torch.tensor([[0.0]], dtype=torch.float32)  # Dummy state
     actions = actor(state)
@@ -55,6 +60,10 @@ for episode in range(num_episodes):
     loss.backward()
     actor_opt.step()
 
+    profits.append(profit.item())
+    prices.append(noisy_actions[0, 0].item())
+    productions.append(noisy_actions[0, 1].item())
+
     sigma *= 0.99  # Decrease sigma over time to reduce exploration as learning progresses
 
     if episode % 1 == 0:
@@ -64,26 +73,25 @@ for episode in range(num_episodes):
 test_actions = actor(torch.tensor([[0.0]], dtype=torch.float32))
 print(f"Optimal Actions: Price {test_actions[0,0].item():.2f}, Production {test_actions[0,1].item():.2f}")
 
-# Initialize environment
-env = EconomicEnv()
+import matplotlib.pyplot as plt
 
-# Define the specific actions: price and production both set to 75.25
-forced_actions = torch.tensor([[75.25, 75.25]])
+# Plotting the profit over time
+plt.figure(figsize=(10, 5))
+plt.plot(profits, label='Profit')
+plt.title('Profit Over Episodes - Monopoly 2')
+plt.xlabel('Episode')
+plt.ylabel('Profit')
+plt.legend()
+plt.show()  # For GUI display or replace with
+plt.savefig(r'D:\studia\WNE\2023_2024\symulacje\zdj\Monopoly_profit_plot_1.png')
 
-# Calculate the profit
-profit = env.step(forced_actions)
-
-print(f"Forced Actions: Price {forced_actions[0,0].item():.2f}, Production {forced_actions[0,1].item():.2f}")
-print(f"Profit for Forced Actions: {profit.item():.2f}")
-
-# Initialize environment
-env = EconomicEnv()
-
-# Define the specific actions: price and production both set to 75.25
-forced_actions = torch.tensor([[75.25, 82]])
-
-# Calculate the profit
-profit = env.step(forced_actions)
-
-print(f"Forced Actions: Price {forced_actions[0,0].item():.2f}, Production {forced_actions[0,1].item():.2f}")
-print(f"Profit for Forced Actions: {profit.item():.2f}")
+# Plotting price and production actions over time
+plt.figure(figsize=(10, 5))
+plt.plot(prices, label='Price')
+plt.plot(productions, label='Production')
+plt.title('Action Trends Over Episodes - Monopoly 2')
+plt.xlabel('Episode')
+plt.ylabel('Actions')
+plt.legend()
+plt.show()
+plt.savefig(r'D:\studia\WNE\2023_2024\symulacje\zdj\Monopoly_profit_plot_2.png')
