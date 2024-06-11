@@ -72,15 +72,15 @@ class ReplayMemory:
 # Initialize actor-critics and optimizers
 actor1 = Actor()
 actor2 = Actor()
-actor_opt1 = optim.Adam(actor1.parameters(), lr=0.0005)
-actor_opt2 = optim.Adam(actor2.parameters(), lr=0.0005)
+actor_opt1 = optim.Adam(actor1.parameters(), lr=0.00005)
+actor_opt2 = optim.Adam(actor2.parameters(), lr=0.00005)
 
 env = EconomicEnv()
 memory = ReplayMemory()
 
 num_games = 100
 steps_per_game = 100
-gamma = 0.99  # Discount factor for future rewards
+gamma = 0.000000000001  # Discount factor for future rewards
 initial_sigma = 0.5  # Standard deviation for exploration noise
 
 # Track prices, productions, and profits over games
@@ -104,6 +104,14 @@ for game in range(num_games):
 
     actor1.bankrupt = False
     actor2.bankrupt = False
+
+    # Track prices, productions, and profits over games
+    prices1 = []
+    prices2 = []
+    productions1 = []
+    productions2 = []
+    profits1 = []
+    profits2 = []
 
     for step in range(steps_per_game):
         state = torch.cat([prev_actions1, prev_actions2]).unsqueeze(0)  # State includes previous actions
@@ -173,25 +181,35 @@ for game in range(num_games):
 
     # Compute loss for actor1
     actor_opt1.zero_grad()
-    action_preds1 = actor1(states)
-    future_rewards1 = torch.stack([env.step(torch.cat([action_pred1.view(1, 2), action2], dim=0))[0]
-                                   for action_pred1, action2 in zip(action_preds1, actions2)])
-    future_rewards1 = future_rewards1.view(-1)  # Ensure it's a 1D tensor
-    loss1 = -rewards1 + gamma * future_rewards1
-    loss1 = loss1.mean()
-    loss1.backward()
-    actor_opt1.step()
+    action_preds1 = actor1(states).view(-1, 2)  # Ensuring that action_preds1 is always [N, 2]
+    future_rewards1_list = [
+        env.step(torch.cat([action_pred1.unsqueeze(0), action2], dim=0))[0]
+        for action_pred1, action2 in zip(action_preds1, actions2) if action_pred1.numel() > 0 and action2.numel() > 0
+    ]
+    if not future_rewards1_list:
+        print("Warning: future_rewards1_list is empty. Check your input tensors.")
+    else:
+        future_rewards1 = torch.stack(future_rewards1_list).view(-1)
+        loss1 = -rewards1 + gamma * future_rewards1
+        loss1 = loss1.mean()
+        loss1.backward()
+        actor_opt1.step()
 
     # Compute loss for actor2
     actor_opt2.zero_grad()
-    action_preds2 = actor2(states)
-    future_rewards2 = torch.stack([env.step(torch.cat([action1, action_pred2.view(1, 2)], dim=0))[1]
-                                   for action_pred2, action1 in zip(action_preds2, actions1)])
-    future_rewards2 = future_rewards2.view(-1)  # Ensure it's a 1D tensor
-    loss2 = -rewards2 + gamma * future_rewards2
-    loss2 = loss2.mean()
-    loss2.backward()
-    actor_opt2.step()
+    action_preds2 = actor2(states).view(-1, 2)  # Ensuring that action_preds2 is always [N, 2]
+    future_rewards2_list = [
+        env.step(torch.cat([action1, action_pred2.unsqueeze(0)], dim=0))[1]
+        for action_pred2, action1 in zip(action_preds2, actions1) if action_pred2.numel() > 0 and action1.numel() > 0
+    ]
+    if not future_rewards2_list:
+        print("Warning: future_rewards2_list is empty. Check your input tensors.")
+    else:
+        future_rewards2 = torch.stack(future_rewards2_list).view(-1)
+        loss2 = -rewards2 + gamma * future_rewards2
+        loss2 = loss2.mean()
+        loss2.backward()
+        actor_opt2.step()
 
     memory.clear()  # Clear memory after each game
 
