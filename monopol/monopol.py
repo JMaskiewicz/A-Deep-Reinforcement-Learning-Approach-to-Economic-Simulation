@@ -20,7 +20,7 @@ class EconomicEnv:
     def __init__(self):
         self.c = 1
     def demand(self, price):
-        return torch.clamp(150 - 1.5 * price, min=0)
+        return torch.clamp(150 - 2 * price, min=0)
 
     def cost(self, production):
         return self.c * production + self.f
@@ -38,7 +38,7 @@ class EconomicEnv:
 actor = Actor()
 env = EconomicEnv()
 actor_opt = optim.Adam(actor.parameters(), lr=0.005)
-num_episodes = 300
+num_episodes = 500
 sigma = 1  # Standard deviation for exploration noise
 
 # Assume these are filled during the training loop

@@ -75,23 +75,27 @@ print(f"Optimal Actions: Price {test_actions[0,0].item():.2f}, Production {test_
 
 import matplotlib.pyplot as plt
 
-# Plotting the profit over time
-plt.figure(figsize=(10, 5))
-plt.plot(profits, label='Profit')
-plt.title('Profit Over Episodes - Monopoly 2')
-plt.xlabel('Episode')
-plt.ylabel('Profit')
-plt.legend()
-plt.show()  # For GUI display or replace with
-plt.savefig(r'D:\studia\WNE\2023_2024\symulacje\zdj\Monopoly_profit_plot_1.png')
+# Create a figure and a set of subplots
+fig, axs = plt.subplots(2, 1, figsize=(10, 10))  # 2 rows, 1 column, figure size 10x10 inches
 
-# Plotting price and production actions over time
-plt.figure(figsize=(10, 5))
-plt.plot(prices, label='Price')
-plt.plot(productions, label='Production')
-plt.title('Action Trends Over Episodes - Monopoly 2')
-plt.xlabel('Episode')
-plt.ylabel('Actions')
-plt.legend()
-plt.show()
-plt.savefig(r'D:\studia\WNE\2023_2024\symulacje\zdj\Monopoly_profit_plot_2.png')
+# Plotting the profit over time on the first subplot
+axs[0].plot(profits, label='Profit')
+axs[0].set_title('Profit Over Episodes - Monopoly 1')
+axs[0].set_xlabel('Episode')
+axs[0].set_ylabel('Profit')
+axs[0].legend()
+
+# Plotting price and production actions over time on the second subplot
+axs[1].plot(prices, label='Price')
+axs[1].plot(productions, label='Production')
+axs[1].set_title('Action Trends Over Episodes - Monopoly 1')
+axs[1].set_xlabel('Episode')
+axs[1].set_ylabel('Actions')
+axs[1].legend()
+
+# Adjust layout so the subplots do not overlap
+plt.tight_layout()
+
+
+# Save the figure to a file
+plt.savefig(r'D:\studia\WNE\2023_2024\symulacje\zdj\Monopoly1_combined_plot.png')
