@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
+import random
 
 # Enable anomaly detection
 torch.autograd.set_detect_anomaly(True)
@@ -24,7 +25,6 @@ class Actor(nn.Module):
         return 100 * self.sigmoid(x)
 
 
-# Economic Environment
 class EconomicEnv:
     def __init__(self):
         self.c = 1
@@ -56,6 +56,19 @@ class EconomicEnv:
         return profit1 / 10, profit2 / 10
 
 
+class ReplayMemory:
+    def __init__(self):
+        self.memory = []
+
+    def push(self, state, action1, action2, reward1, reward2):
+        self.memory.append((state, action1, action2, reward1, reward2))
+
+    def sample(self):
+        return random.sample(self.memory, len(self.memory))
+
+    def clear(self):
+        self.memory = []
+
 # Initialize actor-critics and optimizers
 actor1 = Actor()
 actor2 = Actor()
@@ -63,10 +76,11 @@ actor_opt1 = optim.Adam(actor1.parameters(), lr=0.0005)
 actor_opt2 = optim.Adam(actor2.parameters(), lr=0.0005)
 
 env = EconomicEnv()
+memory = ReplayMemory()
 
 num_games = 100
 steps_per_game = 100
-gamma = 0  # Discount factor for future rewards
+gamma = 0.99  # Discount factor for future rewards
 initial_sigma = 0.5  # Standard deviation for exploration noise
 
 # Track prices, productions, and profits over games
@@ -87,7 +101,6 @@ for game in range(num_games):
     # Tracking for bankruptcy
     consecutive_negatives1 = 0
     consecutive_negatives2 = 0
-
 
     actor1.bankrupt = False
     actor2.bankrupt = False
@@ -119,23 +132,12 @@ for game in range(num_games):
         profits1.append(profit1.item())
         profits2.append(profit2.item())
 
+        # Store experience in memory
+        memory.push(state, noisy_actions1, noisy_actions2, profit1.item(), profit2.item())
+
         # Update previous actions
         prev_actions1 = noisy_actions1.detach().clone().requires_grad_(True)
         prev_actions2 = noisy_actions2.detach().clone().requires_grad_(True)
-
-        # Update actor1
-        actor_opt1.zero_grad()
-        action_pred1 = actor1(state)  # Predicted actions
-        loss1 = -env.step(torch.stack([action_pred1.squeeze(), prev_actions2]))[0]
-        loss1.backward()
-        actor_opt1.step()
-
-        # Update actor2
-        actor_opt2.zero_grad()
-        action_pred2 = actor2(state)  # Predicted actions
-        loss2 = -env.step(torch.stack([prev_actions1, action_pred2.squeeze()]))[1]
-        loss2.backward()
-        actor_opt2.step()
 
         sigma *= 0.99  # Decrease sigma over time to reduce exploration as learning progresses
 
@@ -151,6 +153,35 @@ for game in range(num_games):
             print('Game:', game, 'Step:', step)
             print(f"Actions 1 {noisy_actions1.detach().numpy()}, Profit 1 {profit1.item():.2f}")
             print(f'Actions 2 {noisy_actions2.detach().numpy()}', f'Profit 2 {profit2.item():.2f}')
+
+    # Update actor networks at the end of each game using experiences in memory
+    experiences = memory.sample()
+
+    states, actions1, actions2, rewards1, rewards2 = zip(*experiences)
+
+    states = torch.cat(states)
+    actions1 = torch.stack(actions1)
+    actions2 = torch.stack(actions2)
+    rewards1 = torch.tensor(rewards1)
+    rewards2 = torch.tensor(rewards2)
+
+    # Update actor1
+    actor_opt1.zero_grad()
+    action_preds1 = actor1(states)
+    loss1 = -rewards1 + gamma * -torch.stack([env.step(torch.stack([action_pred1.squeeze(), action2]))[0]
+                                              for action_pred1, action2 in zip(action_preds1, actions2)]).mean()
+    loss1.backward()
+    actor_opt1.step()
+
+    # Update actor2
+    actor_opt2.zero_grad()
+    action_preds2 = actor2(states)
+    loss2 = -rewards2 + gamma * -torch.stack([env.step(torch.stack([action1, action_pred2.squeeze()]))[1]
+                                              for action_pred2, action1 in zip(action_preds2, actions1)]).mean()
+    loss2.backward()
+    actor_opt2.step()
+
+    memory.clear()  # Clear memory after each game
 
 
 
