@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import matplotlib.pyplot as plt
 
 class Actor(nn.Module):
     def __init__(self, num_agents):
@@ -50,7 +51,7 @@ class EconomicEnv:
 
 num_agents = 10
 actors = [Actor(num_agents) for _ in range(num_agents)]
-optimizers = [optim.Adam(actor.parameters(), lr=0.000075) for actor in actors]
+optimizers = [optim.Adam(actor.parameters(), lr=0.0001) for actor in actors]
 
 env = EconomicEnv()
 num_episodes = 2000
@@ -59,6 +60,11 @@ sigma = 0.5  # Standard deviation for exploration noise
 # Initialize previous actions
 prev_actions = [torch.tensor([0.0, 0.0], dtype=torch.float32, requires_grad=True) for _ in range(num_agents)]
 
+# Track prices, productions, and profits over episodes
+prices = [[] for _ in range(num_agents)]
+productions = [[] for _ in range(num_agents)]
+profits = [[] for _ in range(num_agents)]
+
 for episode in range(num_episodes):
     state = torch.cat(prev_actions).unsqueeze(0)  # State includes previous actions of all agents
 
@@ -66,7 +72,13 @@ for episode in range(num_episodes):
     noisy_actions = [torch.clamp(action + sigma * torch.randn_like(action), 0, 100) for action in actions]
 
     actions_tensor = torch.stack([action.squeeze() for action in noisy_actions])
-    profits = env.step(actions_tensor)
+    episode_profits = env.step(actions_tensor)
+
+    # Track prices, productions, and profits
+    for i in range(num_agents):
+        prices[i].append(noisy_actions[i][0, 0].item())
+        productions[i].append(noisy_actions[i][0, 1].item())
+        profits[i].append(episode_profits[i].item())
 
     # Update previous actions
     prev_actions = [action.detach().squeeze() for action in noisy_actions]
@@ -85,13 +97,46 @@ for episode in range(num_episodes):
     if episode % 100 == 0:
         print(f"Episode {episode}:")
         for i in range(num_agents):
-            print(f"Actions {i + 1}: {noisy_actions[i].detach().numpy()}, Profit {profits[i].item():.2f}")
+            print(f"Actions {i + 1}: {noisy_actions[i].detach().numpy()}, Profit {episode_profits[i].item():.2f}")
 
         # Print detailed debug information for the episode
         for i in range(num_agents):
             price, production = actions_tensor[i]
             print(f"Agent {i + 1}: Price={price.item():.2f}, Production={production.item():.2f}, "
-                  f"Profit={profits[i].item():.2f}")
+                  f"Profit={episode_profits[i].item():.2f}")
+
+# Plot profits
+plt.figure(figsize=(12, 6))
+for i in range(num_agents):
+    plt.plot(profits[i], label=f'Firm {i + 1} Profit')
+plt.xlabel('Episode')
+plt.ylabel('Profit')
+plt.legend()
+plt.title('Profit over Episodes')
+plt.savefig(r'D:\studia\WNE\2023_2024\symulacje\zdj\konkurencja\profits.png')
+plt.show()
+
+# Plot prices
+plt.figure(figsize=(12, 6))
+for i in range(num_agents):
+    plt.plot(prices[i], label=f'Firm {i + 1} Price')
+plt.xlabel('Episode')
+plt.ylabel('Price')
+plt.legend()
+plt.title('Price over Episodes')
+plt.savefig(r'D:\studia\WNE\2023_2024\symulacje\zdj\konkurencja\prices.png')
+plt.show()
+
+# Plot productions
+plt.figure(figsize=(12, 6))
+for i in range(num_agents):
+    plt.plot(productions[i], label=f'Firm {i + 1} Production')
+plt.xlabel('Episode')
+plt.ylabel('Production')
+plt.legend()
+plt.title('Production over Episodes')
+plt.savefig(r'D:\studia\WNE\2023_2024\symulacje\zdj\konkurencja\productions.png')
+plt.show()
 
 # Testing the trained actors
 test_state = torch.cat(prev_actions).unsqueeze(0)
