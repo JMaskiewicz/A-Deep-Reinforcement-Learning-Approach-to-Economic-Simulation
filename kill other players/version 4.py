@@ -114,10 +114,10 @@ for game in range(num_games):
         profit1, profit2 = env.step(actions)
 
         # Track prices, productions, and profits
-        prices1.append(noisy_actions1[0].item())
-        prices2.append(noisy_actions2[0].item())
-        productions1.append(noisy_actions1[1].item())
-        productions2.append(noisy_actions2[1].item())
+        prices1.append(noisy_actions1[0, 0].item())
+        prices2.append(noisy_actions2[0, 0].item())
+        productions1.append(noisy_actions1[0, 1].item())
+        productions2.append(noisy_actions2[0, 1].item())
         profits1.append(profit1.item())
         profits2.append(profit2.item())
 
@@ -139,7 +139,7 @@ for game in range(num_games):
         loss2.backward()
         actor_opt2.step()
 
-        sigma *= 0.99  # Decrease sigma over time to reduce exploration as learning progresses
+        sigma *= 0.95  # Decrease sigma over time to reduce exploration as learning progresses
 
         # Update bankruptcy status based on profit
         consecutive_negatives1 = 0 if profit1.item() >= 0 else consecutive_negatives1 + 1
