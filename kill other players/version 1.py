@@ -2,23 +2,19 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-
 class Actor(nn.Module):
     def __init__(self):
         super(Actor, self).__init__()
-        self.fc1 = nn.Linear(4, 16)
+        self.fc1 = nn.Linear(4, 16)  # 4 inputs: previous price and production of both firms
         self.fc2 = nn.Linear(16, 16)
-        self.fc3 = nn.Linear(16, 2)
+        self.fc3 = nn.Linear(16, 2)  # Two outputs: price and production
         self.sigmoid = nn.Sigmoid()
-        self.bankrupt = False  # Indicator if the actor is bankrupt
 
     def forward(self, state):
-        if self.bankrupt:
-            return torch.tensor([0.0, 0.0]).unsqueeze(0) * 100  # Zero price and production if bankrupt
         x = torch.relu(self.fc1(state))
         x = torch.relu(self.fc2(x))
         x = self.fc3(x)
-        return 100 * self.sigmoid(x) # Outputs range [0, 100]
+        return 100 * self.sigmoid(x)  # Outputs range [0, 100]
 
 class EconomicEnv:
     def __init__(self):
@@ -45,8 +41,8 @@ class EconomicEnv:
         revenue1 = price1 * actual_sell1
         revenue2 = price2 * actual_sell2
 
-        cost1 = 20 * production1 + 100
-        cost2 = 5 * production2 + 100
+        cost1 = 25 * production1 + 100  # provide also with 1
+        cost2 = 10 * production2 + 100
 
         profit1 = revenue1 - cost1
         profit2 = revenue2 - cost2
@@ -60,11 +56,6 @@ actor2 = Actor()
 env = EconomicEnv()
 actor_opt1 = optim.Adam(actor1.parameters(), lr=0.00075)
 actor_opt2 = optim.Adam(actor2.parameters(), lr=0.00075)
-
-# Additional variables for bankruptcy tracking
-consecutive_negatives1 = 0
-consecutive_negatives2 = 0
-bankruptcy_threshold = 50  # Number of consecutive negative profits before bankruptcy
 
 num_episodes = 2000
 sigma = 0.5  # Standard deviation for exploration noise
@@ -108,19 +99,6 @@ for episode in range(num_episodes):
 
     sigma *= 0.99  # Decrease sigma over time to reduce exploration as learning progresses
 
-    if profit1.item() < 0:
-        consecutive_negatives1 += 1
-    else:
-        consecutive_negatives1 = 0
-    if profit2.item() < 0:
-        consecutive_negatives2 += 1
-    else:
-        consecutive_negatives2 = 0
-
-    if consecutive_negatives1 >= bankruptcy_threshold:
-        actor1.bankrupt = True
-    if consecutive_negatives2 >= bankruptcy_threshold:
-        actor2.bankrupt = True
 
     print(f"Episode {episode}:\nActions 1 {noisy_actions1.detach().numpy()}, Profit 1 {profit1.item():.2f}")
     print(f'Actions 2 {noisy_actions2.detach().numpy()}', f'Profit 2 {profit2.item():.2f}')

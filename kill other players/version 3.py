@@ -27,9 +27,9 @@ class Actor(nn.Module):
 class ActorCritic(nn.Module):
     def __init__(self):
         super(ActorCritic, self).__init__()
-        self.fc1 = nn.Linear(4, 32)
-        self.fc_actor = nn.Linear(32, 2)
-        self.fc_critic = nn.Linear(32, 1)
+        self.fc1 = nn.Linear(4, 8)
+        self.fc_actor = nn.Linear(8, 2)
+        self.fc_critic = nn.Linear(8, 1)
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
         self.bankrupt = False
@@ -68,7 +68,7 @@ class EconomicEnv:
         revenue1 = price1 * actual_sell1
         revenue2 = price2 * actual_sell2
         cost1 = 20 * production1 + 100
-        cost2 = 5 * production2 + 100
+        cost2 = 10 * production2 + 100
         profit1 = revenue1 - cost1
         profit2 = revenue2 - cost2
         return profit1 / 10, profit2 / 10
@@ -77,19 +77,19 @@ class EconomicEnv:
 # Initialize actors and optimizers
 actor1 = Actor()
 actor_critic2 = ActorCritic()
-opt_actor1 = optim.Adam(actor1.parameters(), lr=0.00075)
-opt_actor_critic2 = optim.Adam(actor_critic2.parameters(), lr=0.0005)
+opt_actor1 = optim.Adam(actor1.parameters(), lr=0.0075)
+opt_actor_critic2 = optim.Adam(actor_critic2.parameters(), lr=0.0075)
 
 env = EconomicEnv()
 
-num_episodes = 2000
-gamma = 0.95  # Discount factor for future rewards
-sigma = 0.75   # Standard deviation for exploration noise
+num_episodes = 5000
+gamma = 0  # Discount factor for future rewards
+sigma = 1   # Standard deviation for exploration noise
 
 # Tracking for bankruptcy
 consecutive_negatives1 = 0
 consecutive_negatives2 = 0
-bankruptcy_threshold = 50
+bankruptcy_threshold = 500
 
 for episode in range(num_episodes):
     state = torch.cat([torch.tensor([0.0, 0.0]), torch.tensor([0.0, 0.0])]).unsqueeze(0)
@@ -138,7 +138,7 @@ for episode in range(num_episodes):
     opt_actor_critic2.step()
 
     # Decay exploration noise
-    sigma = sigma * 0.999
+    sigma = sigma * 0.9999
 
     # Update bankruptcy status based on profit
     consecutive_negatives1 = 0 if profit1.item() >= 0 else consecutive_negatives1 + 1
@@ -159,5 +159,5 @@ for episode in range(num_episodes):
 test_state = torch.cat([torch.tensor([50.0, 30.0]), torch.tensor([50.0, 30.0])]).unsqueeze(0)
 test_actions1 = actor1(test_state)
 test_actions2, _ = actor_critic2(test_state)
-print(f"Final Actions for Firm 1: Price {test_actions1[0].item():.2f}, Production {test_actions1[1].item():.2f}")
-print(f"Final Actions for Firm 2: Price {test_actions2[0].item():.2f}, Production {test_actions2[1].item():.2f}")
+print(f"Test actions 1: {test_actions1.detach().numpy()}")
+print(f"Test actions 2: {test_actions2.detach().numpy()}")
