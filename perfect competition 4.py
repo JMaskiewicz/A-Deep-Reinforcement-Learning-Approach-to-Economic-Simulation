@@ -49,13 +49,13 @@ class EconomicEnv:
         unsorted_profits = profits[torch.argsort(sorted_indices)]
         return unsorted_profits
 
-num_agents = 10
+num_agents = 4
 actors = [Actor(num_agents) for _ in range(num_agents)]
-optimizers = [optim.Adam(actor.parameters(), lr=0.0001) for actor in actors]
+optimizers = [optim.Adam(actor.parameters(), lr=0.000075) for actor in actors]
 
 env = EconomicEnv()
 num_episodes = 2000
-sigma = 0.5  # Standard deviation for exploration noise
+sigma = 1  # Standard deviation for exploration noise
 
 # Initialize previous actions
 prev_actions = [torch.tensor([0.0, 0.0], dtype=torch.float32, requires_grad=True) for _ in range(num_agents)]
@@ -92,7 +92,7 @@ for episode in range(num_episodes):
         loss.backward()
         optimizers[i].step()
 
-    sigma *= 0.995  # Decrease sigma over time to reduce exploration as learning progresses
+    sigma *= 0.999  # Decrease sigma over time to reduce exploration as learning progresses
 
     if episode % 100 == 0:
         print(f"Episode {episode}:")
@@ -114,7 +114,7 @@ plt.ylabel('Profit')
 plt.legend()
 plt.title('Profit over Episodes')
 plt.savefig(r'D:\studia\WNE\2023_2024\symulacje\zdj\konkurencja\profits.png')
-plt.show()
+
 
 # Plot prices
 plt.figure(figsize=(12, 6))
@@ -125,7 +125,7 @@ plt.ylabel('Price')
 plt.legend()
 plt.title('Price over Episodes')
 plt.savefig(r'D:\studia\WNE\2023_2024\symulacje\zdj\konkurencja\prices.png')
-plt.show()
+
 
 # Plot productions
 plt.figure(figsize=(12, 6))
@@ -136,7 +136,7 @@ plt.ylabel('Production')
 plt.legend()
 plt.title('Production over Episodes')
 plt.savefig(r'D:\studia\WNE\2023_2024\symulacje\zdj\konkurencja\productions.png')
-plt.show()
+
 
 # Testing the trained actors
 test_state = torch.cat(prev_actions).unsqueeze(0)
