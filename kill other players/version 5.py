@@ -165,11 +165,18 @@ for game in range(num_games):
     rewards1 = torch.tensor(rewards1)
     rewards2 = torch.tensor(rewards2)
 
+    # Ensure actions1 and actions2 have shape [1, 2] before passing to env.step
+    actions1 = [action.view(1, 2) if action.dim() == 1 else action.unsqueeze(0) if action.dim() == 1 else action for
+                action in actions1]
+    actions2 = [action.view(1, 2) if action.dim() == 1 else action.unsqueeze(0) if action.dim() == 1 else action for
+                action in actions2]
+
     # Compute loss for actor1
     actor_opt1.zero_grad()
     action_preds1 = actor1(states)
-    future_rewards1 = torch.stack([env.step(torch.stack([action_pred1.unsqueeze(0), action2]))[0]
+    future_rewards1 = torch.stack([env.step(torch.cat([action_pred1.view(1, 2), action2], dim=0))[0]
                                    for action_pred1, action2 in zip(action_preds1, actions2)])
+    future_rewards1 = future_rewards1.view(-1)  # Ensure it's a 1D tensor
     loss1 = -rewards1 + gamma * future_rewards1
     loss1 = loss1.mean()
     loss1.backward()
@@ -178,8 +185,9 @@ for game in range(num_games):
     # Compute loss for actor2
     actor_opt2.zero_grad()
     action_preds2 = actor2(states)
-    future_rewards2 = torch.stack([env.step(torch.stack([action1, action_pred2.unsqueeze(0)]))[1]
+    future_rewards2 = torch.stack([env.step(torch.cat([action1, action_pred2.view(1, 2)], dim=0))[1]
                                    for action_pred2, action1 in zip(action_preds2, actions1)])
+    future_rewards2 = future_rewards2.view(-1)  # Ensure it's a 1D tensor
     loss2 = -rewards2 + gamma * future_rewards2
     loss2 = loss2.mean()
     loss2.backward()
