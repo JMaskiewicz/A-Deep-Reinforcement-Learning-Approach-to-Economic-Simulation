@@ -168,9 +168,9 @@ for game in range(num_games):
     # Compute loss for actor1
     actor_opt1.zero_grad()
     action_preds1 = actor1(states)
-    future_rewards1 = torch.stack([env.step(torch.stack([action_pred1, action2]))[0]
+    future_rewards1 = torch.stack([env.step(torch.stack([action_pred1.unsqueeze(0), action2]))[0]
                                    for action_pred1, action2 in zip(action_preds1, actions2)])
-    loss1 = -rewards1 + gamma * future_rewards1.squeeze()
+    loss1 = -rewards1 + gamma * future_rewards1
     loss1 = loss1.mean()
     loss1.backward()
     actor_opt1.step()
@@ -178,9 +178,9 @@ for game in range(num_games):
     # Compute loss for actor2
     actor_opt2.zero_grad()
     action_preds2 = actor2(states)
-    future_rewards2 = torch.stack([env.step(torch.stack([action1, action_pred2]))[1]
+    future_rewards2 = torch.stack([env.step(torch.stack([action1, action_pred2.unsqueeze(0)]))[1]
                                    for action_pred2, action1 in zip(action_preds2, actions1)])
-    loss2 = -rewards2 + gamma * future_rewards2.squeeze()
+    loss2 = -rewards2 + gamma * future_rewards2
     loss2 = loss2.mean()
     loss2.backward()
     actor_opt2.step()
