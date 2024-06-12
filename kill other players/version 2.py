@@ -16,14 +16,27 @@ class ActorCritic(nn.Module):
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
         self.bankrupt = False
+        self.bankrupt_episodes = 0
+        self.sigma = 10  # Initial sigma value for exploration noise
 
     def forward(self, state):
-        if self.bankrupt:
-            return torch.tensor([0.0, 0.0], dtype=torch.float32), torch.tensor([0.0], dtype=torch.float32)
         x = self.relu(self.fc1(state))
         action = 100 * self.sigmoid(self.fc_actor(x))
         value = self.fc_critic(x)
         return action, value
+
+    def reset_actor_weights(self):
+        # Reinitialize actor weights
+        self.fc_actor.reset_parameters()
+        self.sigma = 10  # Reset sigma to its initial value
+
+    def get_noisy_action(self, state):
+        if self.bankrupt:
+            return torch.tensor([[0.0, 0.0]], dtype=torch.float32), torch.tensor([0.0], dtype=torch.float32)
+        action, value = self.forward(state)
+        noisy_action = torch.clamp(action + self.sigma * torch.randn_like(action), 0, 100)
+        return noisy_action.unsqueeze(0), value
+
 
 # Economic Environment
 class EconomicEnv:
@@ -31,7 +44,7 @@ class EconomicEnv:
         self.c = 1
 
     def demand(self, total_price):
-        return torch.clamp(150 - 2 * total_price, min=0)
+        return torch.clamp(torch.exp(-total_price / 20) * 100, min=0)
 
     def step(self, actions):
         price1, production1 = actions[0, 0], actions[0, 1]
@@ -50,8 +63,8 @@ class EconomicEnv:
 
         revenue1 = price1 * actual_sell1
         revenue2 = price2 * actual_sell2
-        cost1 = 30 * production1 + 100
-        cost2 = 10 * production2 + 100
+        cost1 = 10 * production1 + 100
+        cost2 = 30 * production2 + 100
         profit1 = revenue1 - cost1
         profit2 = revenue2 - cost2
         return profit1 / 10, profit2 / 10
@@ -60,14 +73,13 @@ class EconomicEnv:
 # Initialize actor-critics and optimizers
 actor_critic1 = ActorCritic()
 actor_critic2 = ActorCritic()
-opt_actor_critic1 = optim.Adam(actor_critic1.parameters(), lr=0.0005)
-opt_actor_critic2 = optim.Adam(actor_critic2.parameters(), lr=0.0005)
+opt_actor_critic1 = optim.Adam(actor_critic1.parameters(), lr=0.00025)
+opt_actor_critic2 = optim.Adam(actor_critic2.parameters(), lr=0.00025)
 
 env = EconomicEnv()
 
 num_episodes = 2000
 gamma = 0.5  # Discount factor for future rewards
-sigma = 1   # Standard deviation for exploration noise
 
 # Initialize previous actions
 prev_actions1 = torch.tensor([0.0, 0.0], dtype=torch.float32, requires_grad=True)
@@ -84,34 +96,29 @@ profits2 = []
 # Tracking for bankruptcy
 consecutive_negatives1 = 0
 consecutive_negatives2 = 0
-bankruptcy_threshold = 500
+bankruptcy_threshold = 100
+return_from_bankruptcy_threshold = 250
 
 for episode in range(num_episodes):
     state = torch.cat([prev_actions1, prev_actions2]).unsqueeze(0)
 
-    # Get actions and state values from actor_critic1
-    actions1, state_value1 = actor_critic1(state)
-    actions1 = actions1.squeeze()
+    # Get noisy actions and state values from actor_critic1
+    noisy_actions1, state_value1 = actor_critic1.get_noisy_action(state)
 
-    # Get actions and state values from actor_critic2
-    actions2, state_value2 = actor_critic2(state)
-    actions2 = actions2.squeeze()
-
-    # Add exploration noise and clamp
-    noisy_actions1 = torch.clamp(actions1 + sigma * torch.randn_like(actions1), 0, 100)
-    noisy_actions2 = torch.clamp(actions2 + sigma * torch.randn_like(actions2), 0, 100)
+    # Get noisy actions and state values from actor_critic2
+    noisy_actions2, state_value2 = actor_critic2.get_noisy_action(state)
 
     # Combine actions into a single tensor
-    actions = torch.stack([noisy_actions1, noisy_actions2])
+    actions = torch.cat([noisy_actions1, noisy_actions2], dim=0)
 
     # Get profits for both firms
     profit1, profit2 = env.step(actions)
 
     # Track prices, productions, and profits
-    prices1.append(noisy_actions1[0].item())
-    prices2.append(noisy_actions2[0].item())
-    productions1.append(noisy_actions1[1].item())
-    productions2.append(noisy_actions2[1].item())
+    prices1.append(noisy_actions1[0, 0].item())
+    prices2.append(noisy_actions2[0, 0].item())
+    productions1.append(noisy_actions1[0, 1].item())
+    productions2.append(noisy_actions2[0, 1].item())
     profits1.append(profit1.item())
     profits2.append(profit2.item())
 
@@ -133,20 +140,21 @@ for episode in range(num_episodes):
 
     # Backward and optimize for actor_critic1
     opt_actor_critic1.zero_grad()
-    actor_loss1 = (-state_value1 * actions1).mean()  # Policy gradient part
+    actor_loss1 = (-state_value1 * noisy_actions1).mean()  # Policy gradient part
     total_loss1 = td_error1.pow(2).mean() + actor_loss1  # Total loss
     total_loss1.backward(retain_graph=True)  # Retain graph for subsequent backward pass
     opt_actor_critic1.step()
 
     # Backward and optimize for actor_critic2
     opt_actor_critic2.zero_grad()
-    actor_loss2 = (-state_value2 * actions2).mean()  # Policy gradient part
+    actor_loss2 = (-state_value2 * noisy_actions2).mean()  # Policy gradient part
     total_loss2 = td_error2.pow(2).mean() + actor_loss2  # Total loss
     total_loss2.backward()  # No need for retain_graph=True because this is the only backward pass
     opt_actor_critic2.step()
 
     # Decay exploration noise
-    sigma = sigma * 0.999
+    actor_critic1.sigma = actor_critic1.sigma * 0.999
+    actor_critic2.sigma = actor_critic2.sigma * 0.999
 
     # Update bankruptcy status based on profit
     consecutive_negatives1 = 0 if profit1.item() >= 0 else consecutive_negatives1 + 1
@@ -154,8 +162,28 @@ for episode in range(num_episodes):
 
     if consecutive_negatives1 >= bankruptcy_threshold:
         actor_critic1.bankrupt = True
+        actor_critic1.bankrupt_episodes += 1
+    else:
+        actor_critic1.bankrupt_episodes = 0
+
     if consecutive_negatives2 >= bankruptcy_threshold:
         actor_critic2.bankrupt = True
+        actor_critic2.bankrupt_episodes += 1
+    else:
+        actor_critic2.bankrupt_episodes = 0
+
+    # Reset bankruptcy status after 250 episodes of bankruptcy
+    if actor_critic1.bankrupt_episodes >= return_from_bankruptcy_threshold:
+        print(f'Firm 1 returns from bankruptcy at episode {episode}')
+        actor_critic1.bankrupt = False
+        actor_critic1.bankrupt_episodes = 0
+        actor_critic1.reset_actor_weights()
+
+    if actor_critic2.bankrupt_episodes >= return_from_bankruptcy_threshold:
+        print(f'Firm 2 returns from bankruptcy at episode {episode}')
+        actor_critic2.bankrupt = False
+        actor_critic2.bankrupt_episodes = 0
+        actor_critic2.reset_actor_weights()
 
     # Optional: Print episode results
     if episode % 10 == 0:  # Print every 10 episodes
@@ -172,7 +200,6 @@ plt.legend()
 plt.title('Profit over Episodes')
 plt.savefig(r'D:\studia\WNE\2023_2024\symulacje\zdj\oligopol3\profits.png')
 
-
 # Plot prices
 plt.figure(figsize=(12, 6))
 plt.plot(prices1, label='Firm 1 Price')
@@ -183,7 +210,6 @@ plt.legend()
 plt.title('Price over Episodes')
 plt.savefig(r'D:\studia\WNE\2023_2024\symulacje\zdj\oligopol3\prices.png')
 
-
 # Plot productions
 plt.figure(figsize=(12, 6))
 plt.plot(productions1, label='Firm 1 Production')
@@ -193,4 +219,3 @@ plt.ylabel('Production')
 plt.legend()
 plt.title('Production over Episodes')
 plt.savefig(r'D:\studia\WNE\2023_2024\symulacje\zdj\oligopol3\productions.png')
-
